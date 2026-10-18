@@ -179,7 +179,7 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
     private final BufferedImage[] siteIcons=loadSiteIcons();
     private static BufferedImage[] loadSiteIcons(){
         BufferedImage[] icons=new BufferedImage[3];
-        String[] paths={"/site_itch.png","/site_samlib.png","/site_github.png"};
+        String[] paths={"/assets/site_itch.png","/assets/site_samlib.png","/assets/site_github.png"};
         for(int i=0;i<icons.length;i++){
             try{icons[i]=ImageIO.read(Menu.class.getResource(paths[i]));}
             catch(Exception ex){throw new IllegalStateException("Site icon missing: "+paths[i],ex);}
@@ -229,6 +229,7 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
         if(gameRunning)return;
         try{
             int[] state=readSaveState();
+            if(state[2]==1 && state[0]==5 && state[1]==0){startIntro(1,false);return;}
             if(state[1]==0){launchGame();return;}
             startIntro(state[0],state[2]==1);
         }catch(Exception ex){showError("SAVE / INTRO ERROR",ex);}
@@ -243,7 +244,7 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
         introStage=0;
         introStageStart=System.nanoTime();
         screen=4;
-        introTimer=new javax.swing.Timer(40,new ActionListener(){public void actionPerformed(ActionEvent e){advanceIntro();}});
+        introTimer=new javax.swing.Timer(40,e->advanceIntro());
         introTimer.start();
         repaint();
     }
@@ -297,8 +298,7 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
             Class<?> cls=Class.forName("catacombs.SaveData",true,loader);
             Object data=cls.getMethod("load").invoke(null);
             if(data==null)throw new java.io.IOException("Missing save after concrete");
-            cls.getField("hero").setInt(data,1);
-            cls.getField("intro").setBoolean(data,true);
+            cls.getField("intro").setBoolean(data,false);
             cls.getMethod("write").invoke(data);
         }
     }
@@ -329,9 +329,9 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
             final Process process=builder.start();
             gameRunning=true;
             window.setState(Frame.ICONIFIED);
-            Thread watcher=new Thread(new Runnable(){public void run(){
+            Thread watcher=new Thread(()->{
                 try{process.waitFor();}catch(InterruptedException e){Thread.currentThread().interrupt();}
-                SwingUtilities.invokeLater(new Runnable(){public void run(){
+                SwingUtilities.invokeLater(()->{
                     gameRunning=false;
                     window.setState(Frame.NORMAL);
                     window.toFront();
@@ -342,8 +342,8 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
                             startIntro(5,true); // automatic defeat cutscene, no Play click
                     }catch(Exception ex){showError("SAVE / INTRO ERROR",ex);}
                     repaint();
-                }});
-            }},"Catacombs-return");
+                });
+            },"Catacombs-return");
             watcher.setDaemon(true);
             watcher.start();
         }catch(Exception e){
@@ -398,10 +398,10 @@ public final class Menu extends JPanel implements KeyListener, MouseListener {
     public void mousePressed(MouseEvent e){} public void mouseReleased(MouseEvent e){}
     public void mouseEntered(MouseEvent e){} public void mouseExited(MouseEvent e){}
     public static void main(String[] args){
-        SwingUtilities.invokeLater(new Runnable(){public void run(){
+        SwingUtilities.invokeLater(()->{
             JFrame f=new JFrame("NecronomicOS NOS-RPG — Menu prototype");
             Menu m=new Menu(f);f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             f.setContentPane(m);f.pack();f.setLocationRelativeTo(null);f.setVisible(true);m.requestFocusInWindow();
-        }});
+        });
     }
 }
