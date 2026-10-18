@@ -279,7 +279,7 @@ W#.#W#W#.
 
 
 [LEVEL 26]
-TILESET=0
+TILESET=1
 MAP:
 @..WG....
 #.T####w#
@@ -290,7 +290,7 @@ T.W......
 .s.....#E
 
 [LEVEL 27]
-TILESET=0
+TILESET=1
 MAP:
 @#.....R.
 .#.#.#.#.
@@ -301,7 +301,7 @@ MAP:
 E...s...#
 
 [LEVEL 28]
-TILESET=0
+TILESET=1
 MAP:
 1.@#.#T.L
 ..#.b.#..
@@ -312,34 +312,100 @@ MAP:
 1.T#.#E.m
 
 [LEVEL 29]
-TILESET=0
+TILESET=1
 MAP:
 ##.111.##
 #.T#W#T.#
-..#R..#..
-@.B.o.B.E
+..#R..B..
+@.B.o.#.E
 ..#..R#..
-#.T#W#T.#
+#1T#W#T.#
 ##.111.##
 
 [LEVEL 30]
-TILESET=0
+TILESET=1
 MAP:
-@#R....#E
+@#R....#.
 .#.....#.
 .b.....b.
-.b..o..b.
+.b..o..bE
 .b.....b.
 .#.....#.
 .#R...R#.
 
 [LEVEL 31]
+TILESET=1
+MAP:
+T.@#R#E.T
+..##.##G.
+.#R#.#RB.
+.#.#.#.#G
+.#.#.#.#.
+.#w#w#w#W
+.........
+
+[LEVEL 32]
+TILESET=1
+MAP:
+@.BO#O#BE
+#BO.OB#O.
+.O#BB.O.O
+.BO.OB#OB
+##BBOMO##
+.OB.#BBB.
+...O#O...
+
+[LEVEL 33]
+TILESET=1
+MAP:
+@t.G.1...
+.O.O.O.OE
+...1.1.1t
+1O1O.O.O1
+.....1...
+.O1O1O1O.
+.........
+
+[LEVEL 34]
+TILESET=1
+MAP:
+...#.R...
+.#.t.###.
+.#L#.R...
+.#.#.###.
+.#.#.#...
+...#.#.##
+.E.#....@
+
+[LEVEL 35]
 TILESET=0
 MAP:
-m.##m##m.
-.#bb#bb#.
-.#bbbbb#m
-.#bbbbb#.
-..#bbb#..
-...#b#m.m
-@...#...E
+.#N...N#@
+.#.#.#.#.
+.........
+.#.#N#.#.
+.........
+.#.#.#.#.
+E#N...N#.
+
+[LEVEL 36]
+TILESET=1
+MAP:
+E#.N.#.N.
+.#...#...
+.#.#.#.#.
+.#.#.#.#.
+.#.#.#.#.
+...#...#.
+.N.#.N.#@
+
+[LEVEL 37]
+TILESET=1
+MAP:
+.N#.T.#.@
+..#MR.#.T
+TW#WWW#W#
+#.WS..W..
+#W#WWW#W#
+TG#.L.#.T
+E.#.T.#N.
