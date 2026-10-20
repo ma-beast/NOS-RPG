@@ -46,7 +46,13 @@ The repository includes the Java modules, game assets, sprites, level data and s
 
 **Latest published release:** 0.5.46.8 Beta / Demo (Windows, Linux, macOS). Download the game and installers from [Releases](https://github.com/ma-beast/NOS-RPG/releases).
 
-**macOS installer compatibility (tested):** OS X El Capitan 10.11 through macOS Big Sur 11, including intermediate macOS releases, on 2010-era Intel Macs. Testing covered successive operating-system upgrades, complete removal, clean installation, and further OS upgrades. macOS Monterey 12 and newer have not been validated for this hardware; Wi-Fi connectivity issues were encountered on the tested Macs under Monterey.
+**Tested installers:**
+
+- Windows XP SP3 (Pentium III)+
+- Linux: Debian/Ubuntu x86/x86-64.
+- macOS 10+
+
+Requires Java 7 or newer. The Windows installer includes OpenJDK 7. The macOS and Linux installers automatically download a compatible Java version from public repositories if Java 7 or newer is not already installed. An internet connection is required for the download.
 
 **Good luck — and have fun!**
 
@@ -100,7 +106,13 @@ The repository includes the Java modules, game assets, sprites, level data and s
 
 **Последний опубликованный релиз:** 0.5.46.8 Beta / Demo (Windows, Linux, macOS). Скачать игру и установщики можно в разделе [Releases](https://github.com/ma-beast/NOS-RPG/releases).
 
-**Совместимость установщика macOS (проверено):** от OS X El Capitan 10.11 до macOS Big Sur 11 включительно, со всеми промежуточными версиями, на Intel Mac 2010 года. Проверены последовательные обновления ОС, полное удаление игры, чистая установка и дальнейшее обновление системы. macOS Monterey 12 и более новые версии на этом оборудовании не подтверждены: на проверенных компьютерах под Monterey возникли проблемы с подключением к Wi-Fi.
+**Проверенные инсталляторы:**
+
+- Windows от XP SP3 (Pentium III)
+- Linux: Debian/Ubuntu x86/x86-64.
+- macOS от 10 (Intel x64).
+
+Требуется Java 7 или новее; в комплекте Windows-инсталлера идёт Open-JDK_7, Mac и Linux инсталлеры скачивают доступную на вашей системе версию из открытых репозиториев (нужен интернет) если у вас не установлена Ява-7+
 
 **Всем добра! Удачи в прохождении!**
 
