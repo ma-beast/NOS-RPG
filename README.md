@@ -46,6 +46,8 @@ The repository includes the Java modules, game assets, sprites, level data and s
 
 **Latest published release:** 0.5.31.5 Beta/Demo (Windows, Linux, macOS). The repository files and downloadable release packages may be at different development stages. For tested installers and packaged downloads, see [Releases](https://github.com/ma-beast/NOS-RPG/releases).
 
+**macOS installer compatibility (tested):** OS X El Capitan 10.11 through macOS Big Sur 11, including intermediate macOS releases, on 2010-era Intel Macs. Testing covered successive operating-system upgrades, complete removal, clean installation, and further OS upgrades. macOS Monterey 12 and newer have not been validated for this hardware; Wi-Fi connectivity issues were encountered on the tested Macs under Monterey.
+
 **Good luck — and have fun!**
 
 **Author:** Mikhail Zverev / MA-BEAST
@@ -97,6 +99,8 @@ The repository includes the Java modules, game assets, sprites, level data and s
 **Модули:** `NecronomicOS_Menu.jar`, `Catacombs.jar`, `Catacombs-Level-Editor.jar`.
 
 **Последний опубликованный релиз:** 0.5.31.5 Beta/Demo (Windows, Linux, macOS). Файлы репозитория и установочные пакеты могут относиться к разным этапам разработки. Проверенные установщики и готовые пакеты доступны в разделе [Releases](https://github.com/ma-beast/NOS-RPG/releases).
+
+**Совместимость установщика macOS (проверено):** от OS X El Capitan 10.11 до macOS Big Sur 11 включительно, со всеми промежуточными версиями, на Intel Mac 2010 года. Проверены последовательные обновления ОС, полное удаление игры, чистая установка и дальнейшее обновление системы. macOS Monterey 12 и более новые версии на этом оборудовании не подтверждены: на проверенных компьютерах под Monterey возникли проблемы с подключением к Wi-Fi.
 
 **Всем добра! Удачи в прохождении!**
 
