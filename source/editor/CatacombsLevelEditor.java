@@ -6,11 +6,11 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
-/** Standalone 9x7 Catacombs map editor. Java 8 compatible. */
+/** Standalone 9x7 Catacombs map editor. Java 7 compatible. */
 public final class CatacombsLevelEditor extends JFrame {
     private static final int W=9,H=7,S=62;
-    private static final char[] SYMBOLS={'.','#','B','O','1','S','L','R','M','@','E','W','w','T','t','G','V','K','N'};
-    private static final String[] NAMES={"Пол","Стена","Ящик","Яма","Шипы","Слизень","Скелет L","Скелет R","Мышь","Вход","Выход","Решётка закрыта","Решётка открыта","Рычаг","Сломанный рычаг","Гоблин","Колдун","Крысолюд","Орк"};
+    private static final char[] SYMBOLS={'.','#','B','O','1','S','L','R','M','@','E','W','w','T','t','G','V','K','N','P','D','Q','Y','A','X','Z'};
+    private static final String[] NAMES={"Пол","Стена","Ящик","Яма","Шипы","Слизень","Скелет L","Скелет R","Мышь","Вход","Выход","Решётка закрыта","Решётка открыта","Рычаг","Сломанный рычаг","Гоблин","Колдун","Крысолюд","Орк","Паук","Драконид","Тёмный скелет","Призрак","Эльф","Допельгангер","Сирена"};
     private final char[][] map=new char[H][W];
     private char selected='#';
     private File currentFile;
@@ -33,13 +33,13 @@ public final class CatacombsLevelEditor extends JFrame {
     private final Cell[][] cells=new Cell[H][W];
 
     private CatacombsLevelEditor(){
-        super("NOS-RPG map editor 1.3");
+        super("NOS-RPG map editor 1.4");
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter(){public void windowClosing(WindowEvent e){if(confirmDiscard())dispose();}});
         for(int y=0;y<H;y++)for(int x=0;x<W;x++)map[y][x]='.';
         JPanel root=new JPanel(new BorderLayout(8,8));root.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
         JPanel top=new JPanel(new BorderLayout(4,6));
-        JPanel palettePanel=new JPanel(new GridLayout(3,6,4,4));
+        JPanel palettePanel=new JPanel(new GridLayout(5,6,4,4));
         for(int i=0;i<SYMBOLS.length;i++){
             final char sym=SYMBOLS[i];
             JButton b=new JButton(NAMES[i]+"  ["+sym+"]");
@@ -81,7 +81,7 @@ public final class CatacombsLevelEditor extends JFrame {
         if(c=='@'||c=='E')for(int yy=0;yy<H;yy++)for(int xx=0;xx<W;xx++)if(map[yy][xx]==c){map[yy][xx]='.';cells[yy][xx].repaint();}
         map[y][x]=c;if(active>=0)levels.get(active).changed=true;dirty=true;cells[y][x].repaint();updateTitle();
     }
-    private void updateTitle(){setTitle("NOS-RPG map editor 1.3 — "+(currentFile==null?"новая карта":currentFile.getName())+(dirty?" *":""));}
+    private void updateTitle(){setTitle("NOS-RPG map editor 1.4 — "+(currentFile==null?"новая карта":currentFile.getName())+(dirty?" *":""));}
     private void refresh(){for(int y=0;y<H;y++)for(int x=0;x<W;x++)cells[y][x].repaint();updateTitle();}
     private boolean confirmDiscard(){return !dirty||JOptionPane.showConfirmDialog(this,"Есть несохранённые изменения. Продолжить без сохранения?","Внимание",JOptionPane.YES_NO_OPTION)==JOptionPane.YES_OPTION;}
     private static File applicationDirectory(){

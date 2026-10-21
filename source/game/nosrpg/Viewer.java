@@ -13,9 +13,151 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         int id, tileset;
         char[][] cells=new char[H][W];
     }
-    // Level 30: independent 100-turn ritual, no pursuit.
-    private static final int[] RITUAL_X={4,5,5,5,4,3,3,3};
-    private static final int[] RITUAL_Y={2,2,3,4,4,4,3,2};
+    // Garden boss: randomized contiguous growth. Visual-only, never changes map cells.
+    private boolean gardenAwakened=false;
+    private int gardenOriginX=-1,gardenOriginY=-1,gardenRadius=-1;
+    private int gardenStep=0;
+    private boolean heroSlimeForm=false;
+    private int heroGardenStun=0;
+    private boolean gardenDefeated=false,gardenCleansing=false;
+    private int cleanseX=-1,cleanseY=-1,cleanseStep=0;
+    private final boolean[][] cleanseMask=new boolean[H][W];
+    private final javax.swing.Timer cleanseTimer=new javax.swing.Timer(1000,new ActionListener(){
+        public void actionPerformed(ActionEvent e){
+            if(!gardenCleansing||pauseScreen!=0||heroDead)return;
+            cleanseStep++;
+            // Organic reverse wave: sequential random neighboring cells, accelerated by 2 per tick.
+            if(cleanseStep==1){if(cleanseX>=0&&cleanseX<W&&cleanseY>=0&&cleanseY<H)cleanseMask[cleanseY][cleanseX]=true;}
+            else growCleansing((cleanseStep-1)*2);
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(cleanseMask[y][x])gardenMask[y][x]=false;
+            restoreCleansedForms();
+            boolean all=true;for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(!cleanseMask[y][x])all=false;
+            if(all){gardenCleansing=false;cleanseTimer.stop();}
+            repaint();
+        }
+    });
+    private void growCleansing(int amount){
+        for(int i=0;i<amount;i++){
+            java.util.ArrayList<Point> frontier=new java.util.ArrayList<Point>();
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++){
+                if(cleanseMask[y][x])continue;
+                boolean adjacent=false;
+                for(int dy=-1;dy<=1&&!adjacent;dy++)for(int dx=-1;dx<=1;dx++){
+                    if(dx==0&&dy==0)continue;
+                    int xx=x+dx,yy=y+dy;
+                    if(xx>=0&&xx<W&&yy>=0&&yy<H&&cleanseMask[yy][xx]){adjacent=true;break;}
+                }
+                if(adjacent)frontier.add(new Point(x,y));
+            }
+            if(frontier.isEmpty())break;
+            Point next=frontier.get(gardenRandom.nextInt(frontier.size()));
+            cleanseMask[next.y][next.x]=true;
+        }
+    }
+    private void restoreCleansedForms(){
+        if(heroSlimeForm&&heroX>=0&&heroY>=0&&heroX<W&&heroY<H&&!gardenMask[heroY][heroX])heroSlimeForm=false;
+        for(Slime mob:slimes())if(mob.gardenSlime&&!mob.dead&&!mob.escaped&&
+                mob.x>=0&&mob.x<W&&mob.y>=0&&mob.y<H&&!gardenMask[mob.y][mob.x])mob.gardenSlime=false;
+    }
+    private void defeatGarden(int wizardX,int wizardY){
+        if(!gardenAwakened||gardenDefeated)return;
+        gardenDefeated=true;gardenCleansing=true;gardenTimer.stop();
+        cleanseX=wizardX;cleanseY=wizardY;cleanseStep=0;
+        for(int y=0;y<H;y++)java.util.Arrays.fill(cleanseMask[y],false);
+        cleanseTimer.restart();
+    }
+    private void gardenHitByLightning(int x,int y,int radius){
+        if(!gardenAwakened||gardenDefeated)return;
+        for(int yy=Math.max(0,y-radius);yy<=Math.min(H-1,y+radius);yy++)
+            for(int xx=Math.max(0,x-radius);xx<=Math.min(W-1,x+radius);xx++)
+                if(gardenMask[yy][xx]){defeatGarden(x,y);return;}
+    }
+    private final boolean[][] gardenMask=new boolean[H][W];
+    private final Random gardenRandom=new Random();
+    private final javax.swing.Timer gardenTimer=new javax.swing.Timer(2000,new ActionListener(){
+        public void actionPerformed(ActionEvent e){
+            if(!gardenAwakened||gardenDefeated||pauseScreen!=0||heroDead)return;
+            gardenStep++;
+            if(gardenStep==1){
+                if(gardenOriginX>=0&&gardenOriginX<W&&gardenOriginY>=0&&gardenOriginY<H)
+                    gardenMask[gardenOriginY][gardenOriginX]=true;
+            }else growGarden((gardenStep-1)*2);
+            applyGardenTransformations();
+            repaint();
+        }
+    });
+    private void growGarden(int amount){
+        // Rebuild the frontier after every single addition. New growth may branch immediately.
+        for(int i=0;i<amount;i++){
+            java.util.ArrayList<Point> frontier=new java.util.ArrayList<Point>();
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++){
+                if(gardenMask[y][x])continue;
+                boolean adjacent=false;
+                for(int dy=-1;dy<=1&&!adjacent;dy++)for(int dx=-1;dx<=1;dx++){
+                    if(dx==0&&dy==0)continue;
+                    int xx=x+dx,yy=y+dy;
+                    if(xx>=0&&xx<W&&yy>=0&&yy<H&&gardenMask[yy][xx]){adjacent=true;break;}
+                }
+                if(adjacent)frontier.add(new Point(x,y));
+            }
+            if(frontier.isEmpty())break;
+            Point next=frontier.get(gardenRandom.nextInt(frontier.size()));
+            gardenMask[next.y][next.x]=true;
+        }
+    }
+    private void applyGardenTransformations(){
+        if(!gardenAwakened||gardenDefeated)return;
+        if(heroX>=0&&heroY>=0&&heroX<W&&heroY<H&&gardenMask[heroY][heroX])heroSlimeForm=true;
+        for(Slime mob:slimes())if(!mob.dead&&!mob.escaped&&mob.kind!='V'&&mob.kind!='M'&&mob.kind!='m'&&
+                mob.x>=0&&mob.x<W&&mob.y>=0&&mob.y<H&&gardenMask[mob.y][mob.x]){
+            mob.gardenSlime=true;
+            mob.chasing=false;mob.tx=mob.ty=-1;
+        }
+    }
+    private void clearGardenForms(int oldLevel){
+        heroSlimeForm=false;heroGardenStun=0;
+        java.util.List<Slime> old=slimeStates.get(Integer.valueOf(oldLevel));
+        if(old!=null)for(Slime mob:old)mob.gardenSlime=false;
+    }
+    private void startGardenAt(int x,int y){
+        gardenOriginX=x;gardenOriginY=y;gardenRadius=0;gardenStep=0;
+        for(int yy=0;yy<H;yy++)java.util.Arrays.fill(gardenMask[yy],false);
+        // First garden cell appears only on the first 2-second timer tick.
+        if(!gardenDefeated)gardenTimer.restart();
+    }
+    private int gardenTileset(int x,int y,int original){
+        if(gardenAwakened&&gardenMask[y][x])return 3;
+        return original;
+    }
+    private void beginGardenOnFortiethLevel(){
+        if(levels.get(selected).id!=40||gardenAwakened||gardenDefeated)return;
+        gardenAwakened=true;
+        char[][] map=cells();
+        for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(map[y][x]=='O'||map[y][x]=='o'){
+            startGardenAt(x,y);return;
+        }
+        // The centre is a fallback only if the central pit was already modified.
+        startGardenAt(W/2,H/2);
+    }
+    // Wizard patrol offsets around the pit immediately below its map V spawn.
+    private static final int[] RITUAL_OX={0,1,1,1,0,-1,-1,-1};
+    private static final int[] RITUAL_OY={0,0,1,2,2,2,1,0};
+    private Slime wizard(){
+        for(Slime s:slimes())if(s.kind=='V'&&!s.dead&&!s.escaped)return s;
+        return null;
+    }
+    private int ritualX(int i){Slime w=wizard();return w==null?-1:w.spawnX+RITUAL_OX[i];}
+    private int ritualY(int i){Slime w=wizard();return w==null?-1:w.spawnY+RITUAL_OY[i];}
+    private int ritualPreviousIndex=-1;
+    private boolean ritualMoving=false;
+    private int ritualStartX,ritualStartY;
+    private void resetWizardVisit(int level){
+        java.util.List<Slime> mobs=slimeStates.get(Integer.valueOf(level));
+        if(mobs!=null)for(Slime w:mobs)if(w.kind=='V'){
+            w.x=w.spawnX;w.y=w.spawnY;w.dx=w.dy=0;w.dead=false;w.escaped=false;
+            w.stun=0;w.dir=3;w.alternateStep=false;
+        }
+    }
     private int ritualSteps=0,ritualIndex=0;
     private boolean ritualFinished=false;
     // 0: normal; 1: approach pit; 2: three staff swings; 4: final lightning; 3: step into pit.
@@ -23,22 +165,29 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     private long ritualFinalStarted=0L;
     private int ritualStaffSwings=0;
     private int ritualFinalX=4,ritualFinalY=2;
+    private int ritualFinalFromX=4,ritualFinalFromY=2;
     private final javax.swing.Timer ritualFinalTimer=new javax.swing.Timer(60,new ActionListener(){
         public void actionPerformed(ActionEvent e){advanceRitualFinal();}
     });
     private void startRitualFinal(){
         ritualFinalStage=1;ritualStaffSwings=0;ritualFinalStarted=System.currentTimeMillis();
-        ritualFinalX=RITUAL_X[ritualIndex];ritualFinalY=RITUAL_Y[ritualIndex];
+        ritualFinalX=ritualX(ritualIndex);ritualFinalY=ritualY(ritualIndex);
+        ritualFinalFromX=ritualFinalX;ritualFinalFromY=ritualFinalY;
+        if(ritualIndex!=0){
+            int prev=(ritualIndex+RITUAL_OX.length-1)%RITUAL_OX.length;
+            ritualFacing=wizardDirection(ritualX(prev)-ritualFinalX,ritualY(prev)-ritualFinalY);
+        }
         ritualFinalTimer.start();repaint();
     }
     private void advanceRitualFinal(){
         long now=System.currentTimeMillis();
         if(ritualFinalStage==1&&now-ritualFinalStarted>=500){
             if(ritualIndex!=0){
-                ritualIndex=(ritualIndex+RITUAL_X.length-1)%RITUAL_X.length;
-                ritualFinalX=RITUAL_X[ritualIndex];ritualFinalY=RITUAL_Y[ritualIndex];
-                ritualFacing=ritualIndex==0?3:(ritualIndex==1||ritualIndex==2)?0:(ritualIndex==3||ritualIndex==4)?1:2;
-            }else{ritualFinalStage=2;ritualFacing=3;ritualStaffSwings=0;}
+                ritualFinalFromX=ritualFinalX;ritualFinalFromY=ritualFinalY;
+                ritualIndex=(ritualIndex+RITUAL_OX.length-1)%RITUAL_OX.length;
+                ritualFinalX=ritualX(ritualIndex);ritualFinalY=ritualY(ritualIndex);
+                ritualFacing=wizardDirection(ritualFinalX-ritualFinalFromX,ritualFinalY-ritualFinalFromY);
+            }else{ritualFinalStage=2;ritualFacing=2;ritualStaffSwings=0;}
             ritualFinalStarted=now;
         }else if(ritualFinalStage==2&&now-ritualFinalStarted>=500){
             ritualStaffSwings++;
@@ -49,21 +198,25 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             ritualFinalStarted=now;
         }else if(ritualFinalStage==4&&now-ritualFinalStarted>=850){
             clearShockMarks();
-            ritualFinalStage=3;ritualFacing=3;ritualFinalStarted=now;
+            ritualFinalStage=3;ritualFacing=2;ritualFinalStarted=now;
         }else if(ritualFinalStage==3&&now-ritualFinalStarted>=650){
+            // Preserve the original smooth step into the pit before sinking.
+            ritualFinalStage=5;ritualFinalStarted=now;
+        }else if(ritualFinalStage==5&&now-ritualFinalStarted>=400){
             ritualFinished=true;ritualFinalStage=0;ritualFinalTimer.stop();
+            Slime w=wizard();if(w!=null){w.escaped=true;w.dx=w.dy=0;}
         }
         repaint();
     }
-    // The final staff strike is lethal to skeletons, unlike normal stunning bolts.
+    // Final ritual lightning is lethal to every mob and to the hero, including slime form.
     private void ritualFinalBlast(){
         final int x=ritualFinalX,y=ritualFinalY;
+        gardenHitByLightning(x,y,3);
         for(int yy=Math.max(0,y-3);yy<=Math.min(H-1,y+3);yy++)
             for(int xx=Math.max(0,x-3);xx<=Math.min(W-1,x+3);xx++){
                 shocks()[yy][xx]='!';
-                for(Slime mob:slimes())if(!mob.dead&&!mob.escaped&&mob.x==xx&&mob.y==yy){
-                    if(mob.kind=='L'||mob.kind=='R')mob.dead=true;
-                    else {mob.stun=10;mob.dx=mob.dy=0;}
+                for(Slime mob:slimes())if(mob.kind!='V'&&!mob.dead&&!mob.escaped&&mob.x==xx&&mob.y==yy){
+                    mob.dead=true;
                 }
                 if(heroX==xx&&heroY==yy)heroDead=true;
             }
@@ -73,36 +226,62 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     private int ritualHeroStartX=-1,ritualHeroStartY=-1;
     private boolean ritualCrateMoved=false;
     private final java.awt.image.BufferedImage[][] wizardImages=new java.awt.image.BufferedImage[4][4];
-    private boolean ritualRoom(){return levels.get(selected).id==30;}
+    private boolean ritualRoom(){return wizard()!=null;}
     // A new visit to level 30 starts a new ritual, regardless of the hero.
     private void resetRitual(){
         ritualFinalTimer.stop();
-        ritualSteps=0;ritualIndex=0;ritualFinished=false;
+        ritualSteps=0;ritualIndex=0;ritualFinished=false;ritualMoving=false;ritualPreviousIndex=-1;
         ritualFinalStage=0;ritualFinalStarted=0L;ritualStaffSwings=0;
-        ritualFinalX=RITUAL_X[0];ritualFinalY=RITUAL_Y[0];
+        ritualFinalX=ritualX(0);ritualFinalY=ritualY(0);
         ritualFacing=3;ritualAttacking=false;
         ritualHeroStartX=-1;ritualHeroStartY=-1;
         ritualCrateMoved=false;ritualCrateX=-1;ritualCrateY=-1;
     }
     private void loadWizard(){
-        String[] dirs={"right","down","left","up"},poses={"stand","step_left","step_right","action"};
+        String[] dirs={"up","left","down","right"},poses={"stand","step_left","step_right","action"};
         for(int d=0;d<4;d++)for(int a=0;a<4;a++)try{
-            wizardImages[d][a]=javax.imageio.ImageIO.read(new File("sprites/mobs/wizard/"+dirs[d]+"_"+poses[a]+".png"));
+            wizardImages[d][a]=javax.imageio.ImageIO.read(new File("sprites/mobs/wizard/"+dirs[(d==1)?3:(d==3)?1:d]+"_"+poses[a]+".png"));
         }catch(Exception ignored){}
     }
     private void drawWizard(Graphics2D g,int row){
-        if(!ritualRoom()||ritualFinished)return;
-        int x=ritualFinalStage>0?ritualFinalX:RITUAL_X[ritualIndex];
-        int y=ritualFinalStage>0?ritualFinalY:RITUAL_Y[ritualIndex];
-        if(ritualFinalStage==3)y=3;
-        if(y!=row)return;
-        int pose=(ritualFinalStage==4||ritualAttacking||(ritualFinalStage==2&&ritualStaffSwings%2==0))?3:(ritualFinalStage==1?1:0);
-        java.awt.image.BufferedImage im=wizardImages[(ritualFacing+2)%4][pose];
-        if(im!=null)g.drawImage(im,x*TILE,y*TILE+32-im.getHeight()-8,null);
+        Slime w=wizard();
+        if(w==null||ritualFinished)return;
+        int x=ritualFinalStage>0?ritualFinalX:w.x;
+        int y=ritualFinalStage>0?ritualFinalY:w.y;
+        if(ritualFinalStage==5)y=ritualFinalY+1; // pit tile reached by the preceding smooth step
+        if((ritualMoving&&mobPhase?y+(w.dy>0&&movePhase>=2?1:0)-(w.dy<0&&movePhase>=2?1:0):y)!=row)return;
+        boolean walking=ritualMoving&&mobPhase&&movePhase>0;
+        int pose=(ritualFinalStage==4||ritualAttacking||(ritualFinalStage==2&&ritualStaffSwings%2==0))?3:
+            (walking?(w.alternateStep?1:2):(ritualFinalStage==1?1:0));
+        java.awt.image.BufferedImage im=wizardImages[ritualFacing][pose];
+        int px=x*TILE+(walking?w.dx*8*movePhase:0);
+        int py=y*TILE+(walking?w.dy*8*movePhase:0);
+        if(ritualFinalStage==1){
+            double fraction=Math.min(1.0,(System.currentTimeMillis()-ritualFinalStarted)/500.0);
+            px=(int)Math.round((ritualFinalFromX+(ritualFinalX-ritualFinalFromX)*fraction)*TILE);
+            py=(int)Math.round((ritualFinalFromY+(ritualFinalY-ritualFinalFromY)*fraction)*TILE);
+        }else if(ritualFinalStage==3){
+            // Original 650-ms smooth step into the pit, unchanged.
+            double fraction=Math.min(1.0,(System.currentTimeMillis()-ritualFinalStarted)/650.0);
+            py+=(int)Math.round(TILE*fraction);
+        }else if(ritualFinalStage==5){
+            // After the step, sink at the actual pit location.
+            int phase=Math.min(3,(int)((System.currentTimeMillis()-ritualFinalStarted)/100L));
+            java.awt.image.BufferedImage fallPose=wizardImages[ritualFacing][(phase%2)+1];
+            if(fallPose!=null)im=fallPose;
+            Graphics2D clipped=(Graphics2D)g.create();
+            try{
+                clipped.clipRect(px-16,py-24,64,40);
+                if(im!=null)clipped.drawImage(im,px,py+32-im.getHeight()-8+phase*10,null);
+                else {clipped.setColor(new Color(135,50,170));clipped.fillOval(px+6,py-5+phase*10,20,28);}
+            }finally{clipped.dispose();}
+            return;
+        }
+        if(im!=null)g.drawImage(im,px,py+32-im.getHeight()-8,null);
         else {g.setColor(new Color(135,50,170));g.fillOval(x*TILE+6,y*TILE-5,20,28);}
     }
     private boolean ritualSight(int x,int y){
-        int bx=RITUAL_X[ritualIndex],by=RITUAL_Y[ritualIndex];
+        int bx=ritualX(ritualIndex),by=ritualY(ritualIndex);
         if(x!=bx&&y!=by)return false;
         int dx=Integer.compare(x,bx),dy=Integer.compare(y,by);
         for(int px=bx+dx,py=by+dy;px!=x||py!=y;px+=dx,py+=dy){
@@ -113,14 +292,24 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     }
     private void ritualBlast(){
         ritualAttacking=true;
-        int x=RITUAL_X[ritualIndex],y=RITUAL_Y[ritualIndex];
+        int x=ritualX(ritualIndex),y=ritualY(ritualIndex);
+        gardenHitByLightning(x,y,3);
         for(int yy=Math.max(0,y-3);yy<=Math.min(H-1,y+3);yy++)
             for(int xx=Math.max(0,x-3);xx<=Math.min(W-1,x+3);xx++){
                 shocks()[yy][xx]='!';
-                for(Slime mob:slimes())if(!mob.dead&&!mob.escaped&&mob.x==xx&&mob.y==yy){mob.stun=10;mob.dx=mob.dy=0;}
-                if(heroX==xx&&heroY==yy)heroDead=true;
+                for(Slime mob:slimes())if(mob.kind!='V'&&!mob.dead&&!mob.escaped&&mob.x==xx&&mob.y==yy){mob.stun=10;mob.dx=mob.dy=0;}
+                if(heroX==xx&&heroY==yy){
+                    if(heroSlimeForm){heroGardenStun=10;queuedMoves.clear();}
+                    else heroDead=true;
+                }
             }
         // The action sprite stays visible through the mob movement animation.
+    }
+    private int wizardDirection(int dx,int dy){
+        if(dx>0)return 3;
+        if(dx<0)return 1;
+        if(dy>0)return 2;
+        return 0;
     }
     private void ritualTurn(){
         if(!ritualRoom()||ritualFinished||ritualFinalStage>0||heroDead)return;
@@ -133,8 +322,8 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             // The crate only triggers the ritual when its new position is visible.
             if(ritualSight(ritualCrateX,ritualCrateY)){ritualBlast();return;}
         }
-        int next=(ritualIndex+1)%RITUAL_X.length;
-        int nx=RITUAL_X[next],ny=RITUAL_Y[next];
+        int next=(ritualIndex+1)%RITUAL_OX.length;
+        int nx=ritualX(next),ny=ritualY(next);
         char c=cells()[ny][nx];
         boolean blocked=c=='#'||c=='B'||c=='b'||c=='W'||c=='T'||c=='t';
         for(Slime mob:slimes())if(!mob.dead&&!mob.escaped&&mob.x==nx&&mob.y==ny)blocked=true;
@@ -144,9 +333,13 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             for(Slime mob:slimes())if(!mob.dead&&!mob.escaped&&mob.x==nx&&mob.y==ny)mob.dead=true;
             return;
         }
-        ritualIndex=next;
-        int d=(next==1||next==2)?3:(next==3||next==4)?2:(next==5||next==6)?1:0;
+        Slime w=wizard();
+        if(w==null)return;
+        // Keep the route index at the last committed tile until movement succeeds.
+        int d=wizardDirection(nx-w.x,ny-w.y);
         ritualFacing=d;
+        w.dir=d;w.dx=nx-w.x;w.dy=ny-w.y;
+        ritualMoving=true;
     }
     private int ritualCrateX=-1,ritualCrateY=-1;
     private final java.util.List<Level> levels;
@@ -174,11 +367,138 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     private final java.util.Map<Integer,char[][]> levelStates=new HashMap<Integer,char[][]>();
     private boolean moving=false;
     private boolean heroDead=false;
+    // 0.5.45.6: visual-only spike death for heroes. No changes to trap rules.
+    private static final class SpikeDeath {
+        int x,y,frame;
+        final java.awt.image.BufferedImage[] poses=new java.awt.image.BufferedImage[6];
+    }
+    private SpikeDeath spikeDeath=null;
+    private final javax.swing.Timer spikeTimer=new javax.swing.Timer(100,new ActionListener(){
+        public void actionPerformed(ActionEvent e){
+            if(spikeDeath==null){spikeTimer.stop();return;}
+            spikeDeath.frame++;
+            if(spikeDeath.frame>=6){
+                spikeTimer.stop();spikeDeath=null;heroDead=true;syncSuperSlimeTimer();
+            }
+            repaint();
+        }
+    });
+    private void beginHeroSpikeDeath(int x,int y){
+        if(spikeDeath!=null||heroDead)return;
+        SpikeDeath f=new SpikeDeath();f.x=x;f.y=y;
+        for(int i=0;i<f.poses.length;i++){
+            java.awt.image.BufferedImage b=new java.awt.image.BufferedImage(64,64,java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D bg=b.createGraphics();
+            try{
+                int pose=gardenRandom.nextInt(3);
+                if(heroSlimeForm){
+                    java.awt.image.BufferedImage img=MOB_IMAGES[0][pose];
+                    if(img!=null)bg.drawImage(img,16+(32-img.getWidth())/2,56-img.getHeight(),null);
+                    else drawMob(bg,'S',16,24,3,facing,false,false);
+                }else{
+                    java.awt.image.BufferedImage img=null;
+                    if(heroType==0)img=BUCKET_HERO_IMAGES[facing][pose];
+                    else if(heroType==1)img=POLICE_HERO_IMAGES[facing][pose];
+                    else if(heroType==2)img=SCIENTIST_HERO_IMAGES[facing][pose];
+                    else img=FIGHTER_HERO_IMAGES[facing][pose];
+                    if(img!=null)bg.drawImage(img,16,56-img.getHeight(),null);
+                    else drawHero(bg,16,16,heroType);
+                }
+            }finally{bg.dispose();}
+            f.poses[i]=b;
+        }
+        spikeDeath=f;
+        queuedMoves.clear();moving=false;mobPhase=false;moveTimer.stop();movePhase=0;
+        spikeTimer.start();repaint();
+    }
+    private void drawHeroSpikeDeath(Graphics2D g){
+        if(spikeDeath==null)return;
+        SpikeDeath f=spikeDeath;
+        // Contact, quarter-turn, upside-down, three-quarter-turn, full turn, landing.
+        int[] degrees={0,90,180,270,360,360};
+        int lift=(f.frame==0||f.frame==5)?0:16;
+        Graphics2D spin=(Graphics2D)g.create();
+        try{
+            spin.translate(f.x*TILE-16,f.y*TILE-40-lift);
+            spin.rotate(Math.toRadians(degrees[f.frame]),32,36);
+            spin.drawImage(f.poses[f.frame],0,0,null);
+        }finally{spin.dispose();}
+    }
+    private boolean heroInSpikeAnimation(){return spikeDeath!=null;}
+
+    // 0.5.45.7: visual-only spike falls for mobs and Ogre; game rules unchanged.
+    private static final class EnemySpikeDeath {
+        int x,y,frame; boolean ogre;
+        final java.awt.image.BufferedImage[] poses=new java.awt.image.BufferedImage[6];
+    }
+    private final java.util.List<EnemySpikeDeath> enemySpikeDeaths=new java.util.ArrayList<EnemySpikeDeath>();
+    private final javax.swing.Timer enemySpikeTimer=new javax.swing.Timer(100,new ActionListener(){
+        public void actionPerformed(ActionEvent e){
+            for(java.util.Iterator<EnemySpikeDeath> it=enemySpikeDeaths.iterator();it.hasNext();){
+                EnemySpikeDeath f=it.next();if(++f.frame>=6)it.remove();
+            }
+            if(enemySpikeDeaths.isEmpty())enemySpikeTimer.stop();
+            repaint();
+        }
+    });
+    private void beginEnemySpikeDeath(Slime mob){
+        if(mob.kind=='V')return; // Wizard is immune.
+        EnemySpikeDeath f=new EnemySpikeDeath();f.x=mob.x;f.y=mob.y;
+        int d=Math.max(0,Math.min(3,mob.dir));
+        for(int i=0;i<6;i++){
+            java.awt.image.BufferedImage b=new java.awt.image.BufferedImage(64,64,java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D bg=b.createGraphics();
+            try{
+                int pose=gardenRandom.nextInt(3);
+                char c=mob.gardenSlime?'S':mob.kind;
+                java.awt.image.BufferedImage img=null;
+                if(c=='L'||c=='R')img=SKELETON_IMAGES[(d==1?3:d==3?1:d)][pose];
+                else if(c=='P')img=SPIDER_IMAGES[d][pose];
+                else if(c=='N')img=ORC_IMAGES[d][pose];
+                else if(c=='G')img=GOBLIN_IMAGES[d][pose];
+                else if(c=='K')img=RAT_IMAGES[d][pose];
+                else if(c=='S'||c=='s')img=MOB_IMAGES[mob.gardenSlime?0:(levels.get(selected).tileset==1?1:levels.get(selected).tileset==2?2:0)][pose];
+                if(img!=null)bg.drawImage(img,16+(32-img.getWidth())/2,56-img.getHeight(),null);
+                else drawMob(bg,c,16,24,levels.get(selected).tileset,d,false,false);
+            }finally{bg.dispose();}
+            f.poses[i]=b;
+        }
+        enemySpikeDeaths.add(f);enemySpikeTimer.start();repaint();
+    }
+    private void beginOgreSpikeDeath(){
+        EnemySpikeDeath f=new EnemySpikeDeath();f.x=ogreX;f.y=ogreY;f.ogre=true;
+        for(int i=0;i<6;i++){
+            java.awt.image.BufferedImage b=new java.awt.image.BufferedImage(96,96,java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D bg=b.createGraphics();
+            try{
+                java.awt.image.BufferedImage img=OGRE_IMAGES[ogreFacing][gardenRandom.nextInt(3)];
+                if(img!=null)bg.drawImage(img,(96-img.getWidth())/2,80-img.getHeight(),null);
+                else drawOgre(bg,32,48);
+            }finally{bg.dispose();}
+            f.poses[i]=b;
+        }
+        enemySpikeDeaths.add(f);enemySpikeTimer.start();repaint();
+    }
+    private void drawEnemySpikeDeaths(Graphics2D g){
+        int[] degrees={0,90,180,270,360,360};
+        for(EnemySpikeDeath f:enemySpikeDeaths){
+            int size=f.ogre?96:64;
+            int lift=(f.frame==0||f.frame==5)?0:16;
+            Graphics2D spin=(Graphics2D)g.create();
+            try{
+                spin.translate(f.x*TILE-(size-32)/2,f.y*TILE-(f.ogre?72:40)-lift);
+                spin.rotate(Math.toRadians(degrees[f.frame]),size/2,size/2+4);
+                spin.drawImage(f.poses[f.frame],0,0,null);
+            }finally{spin.dispose();}
+        }
+    }
+
     private boolean mobPhase=false;
     private boolean spaceHeld=false, spaceUsed=false;
     // Buffered direction presses, captured with their SPACE modifier at keypress time.
     private final java.util.ArrayDeque<int[]> queuedMoves=new java.util.ArrayDeque<int[]>();
     private void queueOrMove(int dx,int dy,int direction){
+        if(heroGardenStun>0){if(!moving)finishActionTurn();return;}
         boolean action=spaceHeld;
         if(action)spaceUsed=true;
         if(moving){
@@ -252,6 +572,9 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     private boolean ogreMovedThisTurn=false;
     private static final java.awt.image.BufferedImage[][] SKELETON_IMAGES=new java.awt.image.BufferedImage[4][4];
     private static final java.awt.image.BufferedImage[][] GOBLIN_IMAGES=new java.awt.image.BufferedImage[4][4];
+    private static final java.awt.image.BufferedImage[][] RAT_IMAGES=new java.awt.image.BufferedImage[4][4];
+    private static final java.awt.image.BufferedImage[][] ORC_IMAGES=new java.awt.image.BufferedImage[4][4];
+    private static final java.awt.image.BufferedImage[][] SPIDER_IMAGES=new java.awt.image.BufferedImage[4][4];
     private static final java.awt.image.BufferedImage[][] BUCKET_HERO_IMAGES=new java.awt.image.BufferedImage[4][4];
     private static final java.awt.image.BufferedImage[][] POLICE_HERO_IMAGES=new java.awt.image.BufferedImage[4][4];
     private static final java.awt.image.BufferedImage[][] FIGHTER_HERO_IMAGES=new java.awt.image.BufferedImage[4][4];
@@ -273,6 +596,18 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         for(int d=0;d<4;d++)for(int pose=0;pose<3;pose++){
             java.io.File f=new java.io.File("sprites/mobs/goblin/"+SKELETON_DIR[d]+"_"+SKELETON_POSE[pose]+".png");
             try {if(f.isFile())GOBLIN_IMAGES[d][pose]=javax.imageio.ImageIO.read(f);}catch(java.io.IOException ignored){}
+        }
+        for(int d=0;d<4;d++)for(int pose=0;pose<4;pose++){
+            java.io.File f=new java.io.File("sprites/mobs/ratman/"+SKELETON_DIR[d]+"_"+SKELETON_POSE[pose]+".png");
+            try {if(f.isFile())RAT_IMAGES[d][pose]=javax.imageio.ImageIO.read(f);}catch(java.io.IOException ignored){}
+        }
+        for(int d=0;d<4;d++)for(int pose=0;pose<4;pose++){
+            java.io.File f=new java.io.File("sprites/mobs/spider/"+SKELETON_DIR[d]+"_"+SKELETON_POSE[pose]+".png");
+            try {if(f.isFile())SPIDER_IMAGES[d][pose]=javax.imageio.ImageIO.read(f);}catch(java.io.IOException ignored){}
+        }
+        for(int d=0;d<4;d++)for(int pose=0;pose<4;pose++){
+            java.io.File f=new java.io.File("sprites/mobs/orc/"+SKELETON_DIR[d]+"_"+SKELETON_POSE[pose]+".png");
+            try {if(f.isFile())ORC_IMAGES[d][pose]=javax.imageio.ImageIO.read(f);}catch(java.io.IOException ignored){}
         }
         for(int d=0;d<4;d++)for(int pose=0;pose<4;pose++){
             java.io.File f=new java.io.File("sprites/heroes/bucket/"+SKELETON_DIR[d]+"_"+SKELETON_POSE[pose]+".png");
@@ -311,6 +646,18 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             int d=Math.max(0,Math.min(3,direction));
             int pose=(walking&&mobPhase&&movePhase>0)?(alternate?2:1):0;
             img=SKELETON_IMAGES[(d==1?3:d==3?1:d)][pose];
+        }else if(c=='P'){
+            int d=Math.max(0,Math.min(3,direction));
+            int pose=(walking&&mobPhase&&movePhase>0)?(alternate?2:1):0;
+            img=SPIDER_IMAGES[d][pose];
+        }else if(c=='N'){
+            int d=Math.max(0,Math.min(3,direction));
+            int pose=(walking&&mobPhase&&movePhase>0)?(alternate?2:1):0;
+            img=ORC_IMAGES[d][pose];
+        }else if(c=='K'){
+            int d=Math.max(0,Math.min(3,direction));
+            int pose=(walking&&mobPhase&&movePhase>0)?(alternate?2:1):0;
+            img=RAT_IMAGES[d][pose];
         }else if(c=='G'){
             int d=Math.max(0,Math.min(3,direction));
             int pose=(walking&&mobPhase&&movePhase>0)?(alternate?2:1):0;
@@ -408,8 +755,8 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             ogreX=x;ogreY=y;
         }
         char c=cells()[ogreY][ogreX];
-        if(c=='1'){cells()[ogreY][ogreX]='X';ogreDead=true;return;} // corpse stays until next turn
-        if(c=='O'||c=='o'){ogrePitCorpse=true;ogreDelay=5;ogreSpawnAtEntry=true;return;} // show fallen Ogre until next turn
+        if(c=='1'){cells()[ogreY][ogreX]='X';beginOgreSpikeDeath();ogreDead=true;ogrePresent=false;return;} // visual spin; existing permanent death
+        if(c=='O'||c=='o'){ogrePitCorpse=true;ogreDelay=5;ogreSpawnAtEntry=true;beginOgrePitFall();return;} // show fallen Ogre until next turn
         for(Slime mob:slimes())if(!mob.dead&&mob.kind!='M'&&mob.kind!='m'&&mob.x==ogreX&&mob.y==ogreY)mob.dead=true;
         if(heroHeight==0&&ogreX==heroX&&ogreY==heroY)heroDead=true;
     }
@@ -419,15 +766,15 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         if(superSlimeAt(x,y)){heroDead=true;syncSuperSlimeTimer();return;}
         char c=cells()[y][x];
         if(c=='O'||c=='o'){
-            fallToBeginning();return;
+            beginPitFall(true,null,x,y);return;
         }else if(c=='1'){
-            cells()[y][x]='X';heroDead=true;
+            cells()[y][x]='X';beginHeroSpikeDeath(x,y);
         }else if(c=='E'||c=='@'){
             int target=selected+(c=='E'?1:-1);
             if(target>=0&&target<levels.size())enterLevel(target,target<selected);
         }else{
             if(ogreAt(x,y))heroDead=true;
-            for(Slime m:slimes())if(!m.dead&&m.stun==0&&m.x==x&&m.y==y){heroDead=true;break;}
+            for(Slime m:slimes())if(!heroSlimeForm&&!m.dead&&m.stun==0&&m.x==x&&m.y==y){heroDead=true;break;}
         }
     }
     private final java.util.Map<Integer,char[][]> shockStates=new HashMap<Integer,char[][]>();
@@ -476,7 +823,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     private static boolean isTrash(char c){return "!?,;:".indexOf(c)>=0;}
     private void collectTrash(int x,int y){if(x>=0&&y>=0&&x<W&&y<H)trash()[y][x]=0;}
     private void rearmTraps(){char[][] a=cells();for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(a[y][x]=='X')a[y][x]='1';}
-    private void startTurn(){ritualHeroStartX=heroX;ritualHeroStartY=heroY;ritualCrateMoved=false;ritualCrateX=ritualCrateY=-1;ritualAttacking=false;clearShockMarks();tickStuns();rearmTraps();clearDeadMobs();
+    private void startTurn(){if(heroGardenStun>0)heroGardenStun--;ritualHeroStartX=heroX;ritualHeroStartY=heroY;ritualCrateMoved=false;ritualCrateX=ritualCrateY=-1;ritualAttacking=false;clearShockMarks();tickStuns();tickWeb();rearmTraps();clearDeadMobs();
         if(ogreDead||ogrePitCorpse){ogrePresent=false;ogrePitCorpse=false;}
         if(!ogreDebugDisabled&&!ogreAwakened&&levels.get(selected).id==10){
             ogreAwakened=true;ogreDelay=5;ogreLevel=selected;ogreSpawnAtEntry=false;
@@ -489,7 +836,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             int x=heroX+dx*i,y=heroY+dy*i;
             if(x<0||y<0||x>=W||y>=H)break;
             char c=cells()[y][x];
-            if(c!='.'&&c!='1'&&c!='x'&&c!='X'&&c!='F')break;
+            if(c!='.'&&c!='1'&&c!='x'&&c!='X'&&c!='F'&&c!='w')break;
             if(slimeAt(x,y))break;
             tx=x;ty=y;
         }
@@ -498,23 +845,62 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         showHeroAction();finishActionTurn();return true;
     }
 
+    private int heroWebTurns=0,heroWebFrame=0;
+    private boolean heroWebJustReleased=false;
+    private static final class WebShot {
+        int x,y,dx,dy,remaining,frame;
+        WebShot(int x,int y,int dx,int dy,int remaining,int frame){this.x=x;this.y=y;this.dx=dx;this.dy=dy;this.remaining=remaining;this.frame=frame;}
+    }
+    private final java.util.List<WebShot> webShots=new ArrayList<WebShot>();
+    private final javax.swing.Timer webTimer=new javax.swing.Timer(45,new ActionListener(){public void actionPerformed(ActionEvent e){
+        for(java.util.Iterator<WebShot> it=webShots.iterator();it.hasNext();){WebShot w=it.next();w.x+=w.dx;w.y+=w.dy;w.remaining--;if(w.remaining<=0)it.remove();}
+        if(webShots.isEmpty())webTimer.stop();repaint();
+    }});
+    private void webFire(Slime spider,int x,int y,int type,Slime mob){
+        int dx=Integer.compare(x,spider.x),dy=Integer.compare(y,spider.y);
+        if(dx==0&&dy==0)return;
+        int distance=Math.abs(x-spider.x)+Math.abs(y-spider.y);
+        webShots.add(new WebShot(spider.x,spider.y,dx,dy,distance,random.nextInt(4)));
+        if(!webTimer.isRunning())webTimer.start();
+        if(type==1){heroWebTurns=3;heroWebFrame=random.nextInt(4);}
+        else if(type==2&&mob!=null){mob.webTurns=3;mob.webFrame=random.nextInt(4);mob.dx=mob.dy=0;}
+        else if(type==3){spider.webTurns=3;spider.webFrame=random.nextInt(4);}
+    }
+    private void tickWeb(){
+        heroWebJustReleased=false;
+        if(heroWebTurns>0){heroWebTurns--;heroWebFrame=random.nextInt(4);if(heroWebTurns==0)heroWebJustReleased=true;}
+        for(Slime m:slimes()){
+            m.webJustReleased=false;
+            if(m.webTurns>0){m.webTurns--;m.webFrame=random.nextInt(4);if(m.webTurns==0)m.webJustReleased=true;}
+        }
+    }
+    private void drawWeb(Graphics2D g,int x,int y,int frame){
+        java.awt.image.BufferedImage img=SPIDER_IMAGES[frame%4][3];
+        if(img!=null)g.drawImage(img,x,y-8,null);
+    }
     private static final class Slime implements Serializable {
         private static final long serialVersionUID=1L;
         char kind;
         int x,y,dir,tx=-1,ty=-1,dx,dy;
         boolean chasing,dead;
         int stun=0;
+        int webTurns=0,webFrame=0;
+        transient boolean webJustReleased=false;
         boolean escaped=false;
         boolean alternateStep=false;
-        Slime(int x,int y,int d,char kind){this.x=x;this.y=y;dir=d;this.kind=kind;}
+        int spawnX,spawnY;
+        int ratLeverX=-1,ratLeverY=-1; // persistent guard position
+        boolean ratFleeing=false; // one-way mode until next level entry
+        boolean gardenSlime=false;
+        Slime(int x,int y,int d,char kind){this.x=x;this.y=y;spawnX=x;spawnY=y;dir=d;this.kind=kind;}
     }
     private final java.util.Map<Integer,java.util.List<Slime>> slimeStates=new HashMap<Integer,java.util.List<Slime>>();
     private java.util.List<Slime> slimes(){
         Integer key=Integer.valueOf(selected);
         java.util.List<Slime> found=slimeStates.get(key);
         if(found==null){found=new ArrayList<Slime>();char[][] state=cells();
-            for(int y=0;y<H;y++)for(int x=0;x<W;x++)if("SsLRMmG".indexOf(state[y][x])>=0){
-                found.add(new Slime(x,y,(state[y][x]=='R'?3:state[y][x]=='L'?1:random.nextInt(4)),state[y][x]));state[y][x]='.';
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++)if("SsLRMmGKNVP".indexOf(state[y][x])>=0){
+                found.add(new Slime(x,y,(state[y][x]=='R'?3:state[y][x]=='L'?1:state[y][x]=='N'?0:state[y][x]=='V'?3:random.nextInt(4)),state[y][x]));state[y][x]='.';
             }
             slimeStates.put(key,found);
         }
@@ -522,16 +908,21 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     }
     private boolean slimeAt(int x,int y){for(Slime s:slimes())if(!s.dead&&!s.escaped&&s.stun==0&&s.x==x&&s.y==y)return true;return false;}
     private boolean freeForSlime(int x,int y){
-        if(x<0||y<0||x>=W||y>=H||superSlimeAt(x,y))return false;
+        if(x<0||y<0||x>=W||y>=H||superSlimeAt(x,y)||heroSlimeObstacle(x,y))return false;
         char c=cells()[y][x];return (c=='.'||c=='1'||c=='x'||c=='X'||c=='F'||c=='O'||c=='o'||c=='w')&&!slimeAt(x,y);
+    }
+    private boolean heroSlimeObstacle(int x,int y){
+        return heroSlimeForm&&!heroDead&&heroHeight==0&&heroX==x&&heroY==y;
     }
     private boolean freeForActor(Slime actor,int x,int y){
         if(x<0||y<0||x>=W||y>=H)return false;
         if(actor.kind=='M'||actor.kind=='m')return true; // airborne: terrain and Ogre do not block flight
-        if(superSlimeAt(x,y))return false;
+        if(superSlimeAt(x,y)||heroSlimeObstacle(x,y))return false;
         if(ogreAt(x,y))return false; // ground mobs treat living Ogre as an obstacle
         char c=cells()[y][x];
-        if(actor.kind=='G'){
+        if(actor.kind=='N'){
+            if(c!='.'&&c!='x'&&c!='X'&&c!='F'&&c!='w'&&c!='@'&&c!='E')return false;
+        }else if(actor.kind=='G'||actor.kind=='K'){
             if(c!='.'&&c!='x'&&c!='X'&&c!='F'&&c!='w'&&c!='@'&&c!='E')return false;
         }else if(actor.kind=='L'||actor.kind=='R'){
             if(c!='.'&&c!='1'&&c!='x'&&c!='X'&&c!='F'&&c!='w')return false;
@@ -588,7 +979,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
     }
     private boolean goblinSafe(int x,int y,boolean assumeOpen){
         if(goblinEscapeRoute&&goblinDanger(x,y)&&!(x==goblinEscapeX&&y==goblinEscapeY))return false;
-        if(x<0||y<0||x>=W||y>=H||superSlimeAt(x,y)||ogreAt(x,y))return false;
+        if(x<0||y<0||x>=W||y>=H||superSlimeAt(x,y)||ogreAt(x,y)||heroSlimeObstacle(x,y))return false;
         char c=cells()[y][x];
         if(c=='W')return assumeOpen;
         return c=='.'||c=='x'||c=='X'||c=='F'||c=='w'||c=='@'||c=='E';
@@ -697,17 +1088,270 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         else if(s.tx==-2&&heroHeight==0&&Math.abs(heroX-s.x)+Math.abs(heroY-s.y)==1)heroDead=true;
     }
 
+    // Ratman: no trash targeting. Operates the ordinary global lever circuit.
+    // It can only set a trap while directly seeing the hero along a gated corridor.
+    private boolean ratCorridor(Slime s){
+        if(heroX<0||heroDead||heroHeight!=0||!visible(s.x,s.y,heroX,heroY))return false;
+        if(s.x!=heroX&&s.y!=heroY)return false;
+        int dx=Integer.compare(heroX,s.x),dy=Integer.compare(heroY,s.y);
+        int x=s.x+dx,y=s.y+dy;
+        while(x!=heroX||y!=heroY){
+            if(cells()[y][x]=='W'||cells()[y][x]=='w')return true;
+            x+=dx;y+=dy;
+        }
+        return cells()[heroY][heroX]=='w';
+    }
+    private void planRat(Slime s){
+        if(heroX<0||heroDead||heroHeight!=0)return;
+        boolean onGate=cells()[heroY][heroX]=='w';
+        // Direct unobstructed encounter takes priority over guarding a lever.
+        // Only a grate-free sight line triggers retreat; otherwise the accepted
+        // lever/last-guard-position logic remains unchanged.
+        if(!s.ratFleeing&&visible(s.x,s.y,heroX,heroY)&&!ratGrateOnSightLine(s.x,s.y,heroX,heroY))
+            s.ratFleeing=true;
+        if(s.ratFleeing){ratRetreat(s);return;}
+        int targetX=-1,targetY=-1,best=999;
+        // Find a reachable lever position with a real sight line through a grate.
+        // Prefer the current guard position when equally good: avoid oscillation.
+        for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(cells()[y][x]=='T'){
+            for(int d=0;d<4;d++){
+                int nx=x+SX[d],ny=y+SY[d];
+                if(nx<0||ny<0||nx>=W||ny>=H)continue;
+                if(!freeForActor(s,nx,ny)&&!(nx==s.x&&ny==s.y))continue;
+                if(!visible(nx,ny,heroX,heroY))continue;
+                if(nx!=heroX&&ny!=heroY)continue;
+                int dx=Integer.compare(heroX,nx),dy=Integer.compare(heroY,ny);
+                boolean gate=false;
+                for(int xx=nx+dx,yy=ny+dy;xx!=heroX||yy!=heroY;xx+=dx,yy+=dy)
+                    if(cells()[yy][xx]=='W'||cells()[yy][xx]=='w')gate=true;
+                if(cells()[heroY][heroX]=='w')gate=true;
+                if(!gate)continue;
+                int[][] distances=actorDistances(s,nx,ny);
+                int dist=distances[s.y][s.x];
+                if(dist<0)continue;
+                if(dist<best||(dist==best&&nx==s.ratLeverX&&ny==s.ratLeverY)){
+                    best=dist;targetX=nx;targetY=ny;
+                }
+            }
+        }
+        if(targetX>=0){
+            s.ratLeverX=targetX;s.ratLeverY=targetY;
+        }else if(s.ratLeverX>=0){
+            // Hero is out of all lever sight lines: guard the last lever.
+            // Never fall back to the goblin's exit/retreat behavior here.
+            targetX=s.ratLeverX;targetY=s.ratLeverY;
+        }
+        if(targetX>=0){
+            if(s.x==targetX&&s.y==targetY){
+                // A trap can only be sprung when the hero actually occupies a grate.
+                if(onGate&&grateTime()>0&&visible(s.x,s.y,heroX,heroY)){
+                    flipGrates();setGrateTime(0);return;
+                }
+                if(best<999&&grateTime()==0&&!brokenCircuits.contains(Integer.valueOf(selected)))
+                    goblinOpenLever();
+                return;
+            }
+            int[][] ds=actorDistances(s,targetX,targetY);
+            int chosen=-1,dist=ds[s.y][s.x];
+            if(dist>=0)for(int d=0;d<4;d++){
+                int nx=s.x+SX[d],ny=s.y+SY[d];
+                if(!freeForActor(s,nx,ny))continue;
+                if(ds[ny][nx]>=0&&ds[ny][nx]<dist){dist=ds[ny][nx];chosen=d;}
+            }
+            if(chosen>=0){s.dir=chosen;s.dx=SX[chosen];s.dy=SY[chosen];}
+            // If blocked, wait rather than switch into an unrelated escape mode.
+            return;
+        }
+        // No lever acquired yet: the same local retreat, without exit routing.
+        ratRetreat(s);
+    }
+
+    private boolean ratGrateOnSightLine(int ax,int ay,int bx,int by){
+        if(ax!=bx&&ay!=by)return false;
+        int dx=Integer.compare(bx,ax),dy=Integer.compare(by,ay);
+        int x=ax+dx,y=ay+dy;
+        while(x!=bx||y!=by){
+            if(x<0||y<0||x>=W||y>=H)return false;
+            char c=cells()[y][x];
+            if(c=='W'||c=='w')return true;
+            x+=dx;y+=dy;
+        }
+        return cells()[by][bx]=='w';
+    }
+    private void ratRetreat(Slime s){
+        // One-way escape mode: nearest reachable door, never return to levers.
+        goblinEscapeRoute=true;goblinEscapeX=s.x;goblinEscapeY=s.y;
+        int ex=-1,ey=-1,best=999;
+        for(int y=0;y<H;y++)for(int x=0;x<W;x++)
+            if(cells()[y][x]=='@'||cells()[y][x]=='E'){
+                int[][] ds=goblinDistances(x,y,false);
+                if(ds[s.y][s.x]<best){best=ds[s.y][s.x];ex=x;ey=y;}
+            }
+        if(ex>=0){
+            int[][] ds=goblinDistances(ex,ey,false);
+            int chosen=-1,dist=ds[s.y][s.x];
+            for(int d=0;d<4;d++){
+                int nx=s.x+SX[d],ny=s.y+SY[d];
+                if(!goblinSafe(nx,ny,false)||!freeForActor(s,nx,ny))continue;
+                if(ds[ny][nx]<dist){dist=ds[ny][nx];chosen=d;}
+            }
+            if(chosen>=0){s.dir=chosen;s.dx=SX[chosen];s.dy=SY[chosen];}
+        }
+        goblinEscapeRoute=false;
+        if(s.dx!=0||s.dy!=0)return;
+        // If a route is temporarily blocked, retreat as far as possible.
+        int chosen=-1,far=-1;
+        for(int d=0;d<4;d++){
+            int nx=s.x+SX[d],ny=s.y+SY[d];
+            if(goblinDanger(nx,ny)||!goblinSafe(nx,ny,false)||!freeForActor(s,nx,ny))continue;
+            int distance=Math.abs(heroX-nx)+Math.abs(heroY-ny);
+            if(distance>far){far=distance;chosen=d;}
+        }
+        if(chosen>=0){s.dir=chosen;s.dx=SX[chosen];s.dy=SY[chosen];}
+        else if(Math.abs(heroX-s.x)+Math.abs(heroY-s.y)==1)heroDead=true;
+    }
+
+    // Stage 1: stationary clockwise lookout; one sighting alerts all living orcs.
+    private final java.util.Set<Integer> orcAlerts=new java.util.HashSet<Integer>();
+    private boolean orcSeesHero(Slime s){
+        if(heroX<0||heroDead||heroHeight!=0||heroSlimeForm||s.gardenSlime)return false;
+        if(s.dir==0&&heroX!=s.x || s.dir==1&&heroY!=s.y ||
+           s.dir==2&&heroX!=s.x || s.dir==3&&heroY!=s.y)return false;
+        if(s.dir==0&&heroY>=s.y || s.dir==1&&heroX>=s.x ||
+           s.dir==2&&heroY<=s.y || s.dir==3&&heroX<=s.x)return false;
+        return visible(s.x,s.y,heroX,heroY);
+    }
+    // Orc lever routing: uses the existing global seven-turn grate circuit.
+    private boolean orcTile(Slime s,int x,int y,boolean open){
+        if(x<0||y<0||x>=W||y>=H||superSlimeAt(x,y)||ogreAt(x,y)||heroSlimeObstacle(x,y))return false;
+        char c=cells()[y][x];
+        if(c=='W'){if(!open)return false;}
+        else if(c!='.'&&c!='x'&&c!='X'&&c!='F'&&c!='w'&&c!='@'&&c!='E')return false;
+        for(Slime o:slimes())if(o!=s&&!o.dead&&!o.escaped&&o.stun==0&&o.x==x&&o.y==y)return false;
+        return true;
+    }
+    private int[][] orcDistances(Slime s,int tx,int ty,boolean open){
+        int[][] dist=new int[H][W];for(int y=0;y<H;y++)Arrays.fill(dist[y],999);
+        if(tx<0||ty<0||tx>=W||ty>=H)return dist;
+        int[] qx=new int[W*H],qy=new int[W*H];int head=0,tail=0;
+        dist[ty][tx]=0;qx[tail]=tx;qy[tail++]=ty;
+        while(head<tail){int x=qx[head],y=qy[head++];
+            for(int d=0;d<4;d++){int nx=x+SX[d],ny=y+SY[d];
+                if(nx<0||ny<0||nx>=W||ny>=H||dist[ny][nx]!=999)continue;
+                if(!orcTile(s,nx,ny,open)&&!(nx==s.x&&ny==s.y))continue;
+                dist[ny][nx]=dist[y][x]+1;qx[tail]=nx;qy[tail++]=ny;
+            }
+        }
+        return dist;
+    }
+    private void planOrc(Slime s){
+        if(!orcAlerts.contains(Integer.valueOf(selected)))return;
+        int[][] route=orcDistances(s,heroX,heroY,false);
+        int[][] opened=orcDistances(s,heroX,heroY,true);
+        int best=route[s.y][s.x];
+        boolean leverUseful=opened[s.y][s.x]<999&&(best==999||opened[s.y][s.x]+2<best);
+        if(leverUseful&&grateTime()==0&&!brokenCircuits.contains(Integer.valueOf(selected))){
+            int lx=-1,ly=-1,ld=999;
+            for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(cells()[y][x]=='T'){
+                for(int d=0;d<4;d++){int nx=x+SX[d],ny=y+SY[d];
+                    if(!orcTile(s,nx,ny,false))continue;
+                    int[][] dd=orcDistances(s,nx,ny,false);
+                    if(dd[s.y][s.x]<ld){ld=dd[s.y][s.x];lx=nx;ly=ny;}
+                }
+            }
+            if(lx>=0&&ld<999){
+                if(s.x==lx&&s.y==ly){goblinOpenLever();return;}
+                route=orcDistances(s,lx,ly,false);best=route[s.y][s.x];
+            }
+        }
+        int choice=-1;
+        for(int d=0;d<4;d++){int nx=s.x+SX[d],ny=s.y+SY[d];
+            if(!freeForActor(s,nx,ny))continue;
+            if(route[ny][nx]<best){best=route[ny][nx];choice=d;}
+        }
+        if(choice>=0){s.dir=choice;s.dx=SX[choice];s.dy=SY[choice];}
+    }
+    private void resetOrcsOnExit(int level){
+        java.util.List<Slime> mobs=slimeStates.get(Integer.valueOf(level));
+        if(mobs!=null)for(Slime s:mobs)if(s.kind=='N'&&!s.dead){
+            s.x=s.spawnX;s.y=s.spawnY;s.dir=0;s.dx=s.dy=0;
+        }
+        orcAlerts.remove(Integer.valueOf(level));
+    }
     private void planSlimes(){
         ritualTurn();
         if(heroDead){repaint();return;}
         java.util.List<Slime> list=slimes();
-        for(Slime s:list){s.dx=0;s.dy=0;
-            if(s.dead||s.stun>0||s.escaped)continue;
-            if(s.kind=='G'){planGoblin(s);continue;}
-            if(s.kind=='M'||s.kind=='m'){
+        // Sight check before rotation.
+        if(!orcAlerts.contains(Integer.valueOf(selected)))
+            for(Slime s:list)if(s.kind=='N'&&!s.gardenSlime&&!s.dead&&!s.escaped&&s.stun==0&&orcSeesHero(s)){
+                orcAlerts.add(Integer.valueOf(selected));break;
+            }
+        // Idle guards rotate together. Recheck sight before any orc plans its step.
+        if(!orcAlerts.contains(Integer.valueOf(selected))){
+            for(Slime s:list)if(s.kind=='N'&&!s.gardenSlime&&!s.dead&&!s.escaped&&s.stun==0)s.dir=(s.dir+3)%4;
+            for(Slime s:list)if(s.kind=='N'&&!s.gardenSlime&&!s.dead&&!s.escaped&&s.stun==0&&orcSeesHero(s)){
+                orcAlerts.add(Integer.valueOf(selected));break;
+            }
+        }
+        for(Slime s:list){
+            if(s.kind=='V')continue; // Keep the wizard's planned movement for conflict resolution.
+            s.dx=0;s.dy=0;
+            if(s.kind=='P'){
+                if(s.dead||s.stun>0||s.escaped)continue;
+                // Stateless selection each turn: prefer visible webbed prey, whoever fired.
+                int best=999,tx=-1,ty=-1,type=0;Slime target=null;
+                boolean webbed=false;
+                if(heroX>=0&&!heroDead&&heroHeight==0&&visible(s.x,s.y,heroX,heroY)){
+                    best=Math.abs(heroX-s.x)+Math.abs(heroY-s.y);
+                    tx=heroX;ty=heroY;type=1;webbed=heroWebTurns>0;
+                }
+                for(Slime p:list)if(p!=s&&p.kind!='P'&&!p.dead&&!p.escaped&&visible(s.x,s.y,p.x,p.y)){
+                    int d=Math.abs(p.x-s.x)+Math.abs(p.y-s.y);
+                    boolean w=p.webTurns>0;
+                    if(type==0||(w&&!webbed)||(w==webbed&&d<best)){
+                        best=d;tx=p.x;ty=p.y;type=2;target=p;webbed=w;
+                    }
+                }
+                char[][] t=trash();
+                for(int yy=0;yy<H;yy++)for(int xx=0;xx<W;xx++)if(isTrash(t[yy][xx])&&visible(s.x,s.y,xx,yy)){
+                    int d=Math.abs(xx-s.x)+Math.abs(yy-s.y);
+                    // Existing web marker on the firing spider represents a webbed trash tile.
+                    boolean w=false;
+                    for(Slime p:list)if(p.kind=='P'&&p.webTurns>0&&p.tx==xx&&p.ty==yy){w=true;break;}
+                    if(type==0||(w&&!webbed)||(w==webbed&&d<best)){
+                        best=d;tx=xx;ty=yy;type=3;target=null;webbed=w;
+                    }
+                }
+                if(type==0)continue;
+                s.tx=tx;s.ty=ty;
+                if(webbed){
+                    int distance=best,choice=-1;
+                    for(int d=0;d<4;d++){
+                        int nx=s.x+SX[d],ny=s.y+SY[d];
+                        // A spider may step onto its webbed prey; other occupied cells remain blocked.
+                        if(!(nx==tx&&ny==ty&&webbed&&type!=0)&&!freeForActor(s,nx,ny))continue;
+                        int nd=Math.abs(nx-tx)+Math.abs(ny-ty);
+                        if(nd<distance){distance=nd;choice=d;}
+                    }
+                    if(choice>=0){s.dir=choice;s.dx=SX[choice];s.dy=SY[choice];}
+                }else{
+                    // One free action after release, then a new shot if prey is visible.
+                    boolean justReleased=type==1?heroWebJustReleased:type==2?target.webJustReleased:false;
+                    if(justReleased)continue;
+                    s.dir=tx<s.x?1:tx>s.x?3:ty<s.y?0:2;
+                    webFire(s,tx,ty,type,target);
+                }
+                continue;
+            }
+            if(s.dead||s.stun>0||s.escaped||s.webTurns>0)continue;
+            if(s.kind=='N'&&!s.gardenSlime){planOrc(s);continue;}
+            if(s.kind=='G'&&!s.gardenSlime){planGoblin(s);continue;}
+            if(s.kind=='K'&&!s.gardenSlime){planRat(s);continue;}
+            if(!s.gardenSlime&&(s.kind=='M'||s.kind=='m')){
                 // Four independent random weights, one tile per turn.
                 int[] weights={random.nextInt(100)+1,random.nextInt(100)+1,random.nextInt(100)+1,random.nextInt(100)+1};
-                boolean sees=heroX>=0&&!heroDead&&(heroHeight>0||visible(s.x,s.y,heroX,heroY));
+                boolean sees=heroX>=0&&!heroDead&&!heroSlimeForm&&(heroHeight>0||visible(s.x,s.y,heroX,heroY));
                 if(sees){
                     if(heroX<s.x)weights[1]*=2;
                     if(heroX>s.x)weights[3]*=2;
@@ -723,7 +1367,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
                 if(choice>=0){s.dir=choice;s.dx=SX[choice];s.dy=SY[choice];}
                 continue;
             }
-            if(heroX>=0&&!heroDead&&heroHeight==0&&visible(s.x,s.y,heroX,heroY)){
+            if(heroX>=0&&!heroDead&&!heroSlimeForm&&heroHeight==0&&visible(s.x,s.y,heroX,heroY)){
                 s.chasing=true;s.tx=heroX;s.ty=heroY;
             }
             else {
@@ -756,7 +1400,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
                     // If blocked, retain the remembered target and wait for a new sighting.
                 }
             }
-            if(!s.chasing && (s.kind=='L'||s.kind=='R')){
+            if(!s.chasing && !s.gardenSlime && (s.kind=='L'||s.kind=='R')){
                 // Hand-on-wall maze rule: preferred side, straight, opposite side, back.
                 // Direction indices are clockwise reversed: up,left,down,right.
                 int hand=s.kind=='L'?1:-1;
@@ -780,6 +1424,10 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             int ax=a.x+a.dx,ay=a.y+a.dy;
             for(int j=0;j<i;j++){Slime b=list.get(j);
                 if(a.kind=='M'||a.kind=='m'||b.kind=='M'||b.kind=='m')continue;
+                // Spider stepping onto immobilized prey is a kill, not a competing move.
+                // Still prevent two spiders (or other actors) from sharing a destination.
+                if(a.kind=='P'&&b.kind!='P'&&!b.dead&&!b.escaped&&b.webTurns>0
+                        &&b.dx==0&&b.dy==0&&ax==b.x&&ay==b.y)continue;
                 if(!b.dead&&ax==b.x+b.dx&&ay==b.y+b.dy){a.dx=0;a.dy=0;break;}
             }
         }
@@ -808,12 +1456,14 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         if(pauseScreen!=0||heroDead)return;
         pauseScreen=1;pauseChoice=0;spaceHeld=false;spaceUsed=false;
         pausedMoveTimer=moveTimer.isRunning();pausedBossTimer=superSlimeTimer.isRunning();
-        moveTimer.stop();superSlimeTimer.stop();repaint();
+        moveTimer.stop();superSlimeTimer.stop();gardenTimer.stop();cleanseTimer.stop();repaint();
     }
     private void closePause(){
         pauseScreen=0;
         if(pausedMoveTimer)moveTimer.start();
         if(pausedBossTimer)syncSuperSlimeTimer();
+        if(gardenAwakened&&!gardenDefeated&&!gardenTimer.isRunning())gardenTimer.start();
+        if(gardenCleansing&&!cleanseTimer.isRunning())cleanseTimer.start();
         pausedMoveTimer=false;pausedBossTimer=false;repaint();
     }
     private void pauseActivate(){
@@ -949,6 +1599,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         loadWizard();
         restoreSave();
         resetHero();
+        if(levels.get(selected).id==40)beginGardenOnFortiethLevel();
         // A normal exit resumes at the exact saved tile and elevation.
         if(restoredWorld!=null && restoredWorld.heroX>=0){
             heroX=restoredWorld.heroX;heroY=restoredWorld.heroY;
@@ -969,6 +1620,8 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         int ogreX,ogreY,ogreStun,ogreDelay,ogreLevel,ogreFacing;
         int heroX,heroY,heroHeight,facing,stride,selected;
         int ritualSteps,ritualIndex,ritualFacing;boolean ritualFinished;
+        boolean gardenAwakened;int gardenOriginX,gardenOriginY,gardenRadius,gardenStep;boolean[][] gardenMask;boolean heroSlimeForm;
+        boolean gardenDefeated,gardenCleansing;int cleanseX,cleanseY,cleanseStep,heroGardenStun;boolean[][] cleanseMask;
     }
     private byte[] worldBytes() throws IOException {
         World w=new World();
@@ -986,6 +1639,11 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         w.ogreX=ogreX;w.ogreY=ogreY;w.ogreStun=ogreStun;w.ogreDelay=ogreDelay;
         w.ogreLevel=ogreLevel;w.ogreFacing=ogreFacing;
         w.ritualSteps=ritualSteps;w.ritualIndex=ritualIndex;w.ritualFacing=ritualFacing;w.ritualFinished=ritualFinished;
+        w.gardenAwakened=gardenAwakened;w.gardenOriginX=gardenOriginX;w.gardenOriginY=gardenOriginY;w.gardenRadius=gardenRadius;
+        w.gardenStep=gardenStep;w.heroSlimeForm=heroSlimeForm;w.gardenMask=new boolean[H][W];
+        w.gardenDefeated=gardenDefeated;w.gardenCleansing=gardenCleansing;w.cleanseX=cleanseX;w.cleanseY=cleanseY;w.cleanseStep=cleanseStep;w.heroGardenStun=heroGardenStun;w.cleanseMask=new boolean[H][W];
+        for(int yy=0;yy<H;yy++)System.arraycopy(cleanseMask[yy],0,w.cleanseMask[yy],0,W);
+        for(int yy=0;yy<H;yy++)System.arraycopy(gardenMask[yy],0,w.gardenMask[yy],0,W);
         w.heroX=heroX;w.heroY=heroY;w.heroHeight=heroHeight;
         w.facing=facing;w.stride=stride;w.selected=selected;
         ByteArrayOutputStream bytes=new ByteArrayOutputStream();
@@ -1013,8 +1671,26 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         ogrePitCorpse=w.ogrePitCorpse;ogreDebugDisabled=w.ogreDebugDisabled;
         ogreSpawnAtEntry=w.ogreSpawnAtEntry;ogreAlternateStep=w.ogreAlternateStep;
         ogreX=w.ogreX;ogreY=w.ogreY;ogreStun=w.ogreStun;ogreDelay=w.ogreDelay;
+        gardenAwakened=w.gardenAwakened;heroSlimeForm=w.heroSlimeForm;
+        gardenDefeated=w.gardenDefeated;gardenCleansing=w.gardenCleansing;heroGardenStun=w.heroGardenStun;
+        cleanseX=w.cleanseX;cleanseY=w.cleanseY;cleanseStep=w.cleanseStep;
+        for(int yy=0;yy<H;yy++){java.util.Arrays.fill(cleanseMask[yy],false);if(w.cleanseMask!=null&&yy<w.cleanseMask.length&&w.cleanseMask[yy]!=null)System.arraycopy(w.cleanseMask[yy],0,cleanseMask[yy],0,Math.min(W,w.cleanseMask[yy].length));}
+        if(gardenAwakened){
+            gardenOriginX=w.gardenOriginX;gardenOriginY=w.gardenOriginY;gardenRadius=w.gardenRadius;gardenStep=w.gardenStep;
+            for(int yy=0;yy<H;yy++)java.util.Arrays.fill(gardenMask[yy],false);
+            if(w.gardenMask!=null){
+                for(int yy=0;yy<H&&yy<w.gardenMask.length;yy++)
+                    if(w.gardenMask[yy]!=null)System.arraycopy(w.gardenMask[yy],0,gardenMask[yy],0,Math.min(W,w.gardenMask[yy].length));
+            }else{
+                // Loading a save from 0.5.37.10: preserve the previously visible garden.
+                for(int yy=0;yy<H;yy++)for(int xx=0;xx<W;xx++)
+                    if(Math.max(Math.abs(xx-gardenOriginX),Math.abs(yy-gardenOriginY))<=gardenRadius)gardenMask[yy][xx]=true;
+            }
+            if(!gardenDefeated)gardenTimer.start();
+            else if(gardenCleansing)cleanseTimer.start();
+        }
         ogreLevel=w.ogreLevel;ogreFacing=w.ogreFacing;
-        ritualFinalTimer.stop();ritualFinalStage=0;ritualSteps=w.ritualSteps;ritualIndex=Math.max(0,Math.min(7,w.ritualIndex));ritualFacing=w.ritualFacing;ritualFinished=w.ritualFinished;
+        ritualFinalTimer.stop();ritualFinalStage=0;ritualSteps=w.ritualSteps;ritualIndex=Math.max(0,Math.min(7,w.ritualIndex));ritualFacing=w.ritualFacing;ritualFinished=w.ritualFinished;ritualMoving=false;
     }
     private void restoreSave(){
         try{
@@ -1051,7 +1727,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             catacombs.SaveData data=new catacombs.SaveData();
             data.hero=heroType+2;data.intro=true;data.level=1;data.fromExit=false;
             // Death on level 30 must not carry the previous hero's ritual into the next life.
-            if(ritualRoom())resetRitual();
+            if(ritualRoom()){resetWizardVisit(selected);resetRitual();}
             data.world=worldBytes();
             // The next hero must spawn at the start, not at the death location.
             World deathWorld=readWorld(data.world);deathWorld.heroX=-1;
@@ -1109,7 +1785,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             java.util.List<Slime> actors=slimes();
             // Ground pass: entire floor, so moving actor cannot erase adjacent floor.
             for(int y=0;y<H;y++)for(int x=0;x<W;x++)
-                drawGround(g,state[y][x],x*TILE,y*TILE,level.tileset);
+                drawGround(g,state[y][x],x*TILE,y*TILE,gardenTileset(x,y,level.tileset));
             // Flat trash lies on the floor and does not replace the underlying tile.
             char[][] litter=trash();
             for(int y=0;y<H;y++)for(int x=0;x<W;x++)if(isTrash(litter[y][x]))
@@ -1138,38 +1814,51 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
                     if(moving && x==crateX && y==crateY)continue;
                     char c=state[y][x];
                     if(c!='W'&&c!='w'&&c!='M'&&c!='m')
-                        drawObject(g,c,x*TILE,y*TILE,level.tileset);
+                        drawObject(g,c,x*TILE,y*TILE,gardenTileset(x,y,level.tileset));
                 }
                 if(moving && crateX>=0){
                     int cx=crateX*TILE+moveDX*8*movePhase;
                     int cy=crateY*TILE+moveDY*8*movePhase;
                     if((cy>=y*TILE && cy<(y+1)*TILE) || (y==H-1 && cy>=H*TILE))
-                        drawObject(g,'B',cx,cy,level.tileset);
+                        drawObject(g,'B',cx,cy,gardenTileset(crateX,crateY,level.tileset));
                 }
                 for(Slime slime:actors){
-                    if(slime.escaped||slime.kind=='M'||slime.kind=='m')continue;
+                    if(slime.escaped||slime.dead||((slime.kind=='M'||slime.kind=='m')&&!slime.gardenSlime)||slime.kind=='V')continue;
                     int sy=slime.y*TILE+(mobPhase?slime.dy*8*movePhase:0);
                     if(sy>=y*TILE&&sy<(y+1)*TILE)
-                        drawMob(g,slime.kind,slime.x*TILE+(mobPhase?slime.dx*8*movePhase:0),sy,level.tileset,slime.dir,slime.dx!=0||slime.dy!=0,slime.alternateStep);
+                        drawMob(g,slime.gardenSlime?'S':slime.kind,slime.x*TILE+(mobPhase?slime.dx*8*movePhase:0),sy,level.tileset,slime.dir,slime.dx!=0||slime.dy!=0,slime.alternateStep);
                 }
                 drawWizard(g,y);
-                if(ogrePresent&&ogreLevel==selected&&ogreY==y)drawOgreSprite(g,ogreX*TILE,ogreY*TILE);
-                if(ogrePresent&&ogreLevel==selected&&ogreY==y&&ogreStun>0)drawBolt(g,ogreX*TILE,ogreY*TILE);
+                if(ogrePresent&&!ogrePitCorpse&&ogreLevel==selected&&ogreY==y)drawOgreSprite(g,ogreX*TILE,ogreY*TILE);
+                if(ogrePresent&&!ogrePitCorpse&&ogreLevel==selected&&ogreY==y&&ogreStun>0)drawBolt(g,ogreX*TILE,ogreY*TILE);
                 for(Slime slime:actors)if(!slime.dead&&!slime.escaped&&slime.stun>0&&slime.y==y)drawBolt(g,slime.x*TILE,slime.y*TILE);
                 for(int x=0;x<W;x++)if(shocks()[y][x]=='!')drawBolt(g,x*TILE,y*TILE);
                 if(superSlimeRoom()&&y==4)drawSuperSlime(g);
-                if(heroX>=0&&heroRow==y)drawCurrentHero(g,hx,hy);
+                if(heroX>=0&&heroRow==y&&!heroInPitAnimation()&&!heroInSpikeAnimation()){
+                    if(heroSlimeForm){drawMob(g,'S',hx,hy,3,facing,moving&&!mobPhase,stride!=0);if(heroGardenStun>0)drawBolt(g,hx,hy);}
+                    else drawCurrentHero(g,hx,hy);
+                }
+                if(heroWebTurns>0&&heroY==y)drawWeb(g,hx,hy,heroWebFrame);
+                for(Slime prey:actors)if(prey.kind!='P'&&prey.kind!='M'&&prey.kind!='m'&&prey.webTurns>0&&!prey.dead&&!prey.escaped&&prey.y==y)drawWeb(g,prey.x*TILE,prey.y*TILE,prey.webFrame);
+                for(Slime spider:actors)if(spider.kind=='P'&&spider.webTurns>0&&spider.y==y)drawWeb(g,spider.tx*TILE,spider.ty*TILE,spider.webFrame);
+                for(WebShot shot:webShots)if(shot.y==y)drawWeb(g,shot.x*TILE,shot.y*TILE,shot.frame);
                 for(int x=0;x<W;x++)if(state[y][x]=='W'||state[y][x]=='w')
-                    drawObject(g,state[y][x],x*TILE,y*TILE,level.tileset);
+                    drawObject(g,state[y][x],x*TILE,y*TILE,gardenTileset(x,y,level.tileset));
                 for(int x=0;x<W;x++)if(state[y][x]=='M'||state[y][x]=='m')
                     drawMob(g,state[y][x],x*TILE,y*TILE-32,level.tileset,2,false,false);
-                for(Slime slime:actors)if(!slime.escaped&&(slime.kind=='M'||slime.kind=='m')){
+                for(Slime slime:actors)if(!slime.escaped&&!slime.gardenSlime&&(slime.kind=='M'||slime.kind=='m')){
                     int sy=slime.y*TILE-32+(mobPhase?slime.dy*8*movePhase:0);
                     int rowY=slime.y+(mobPhase&&slime.dy>0&&movePhase>=2?1:0)-(mobPhase&&slime.dy<0&&movePhase>=2?1:0);
-                    if(rowY==y)
-                        drawMob(g,slime.kind,slime.x*TILE+(mobPhase?slime.dx*8*movePhase:0),sy,level.tileset,slime.dir,slime.dx!=0||slime.dy!=0,slime.alternateStep);
+                    if(rowY==y){
+                        int sx=slime.x*TILE+(mobPhase?slime.dx*8*movePhase:0);
+                        drawMob(g,slime.gardenSlime?'S':slime.kind,sx,sy,level.tileset,slime.dir,slime.dx!=0||slime.dy!=0,slime.alternateStep);
+                        if(slime.webTurns>0&&!slime.dead)drawWeb(g,sx,sy,slime.webFrame);
+                    }
                 }
             }
+            drawPitFalls(g);
+            drawHeroSpikeDeath(g);
+            drawEnemySpikeDeaths(g);
             g.translate(-16,-8);
             if(pauseScreen!=0)drawPause(g);
             if(deathFadeActive){
@@ -1380,7 +2069,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         timer.setRepeats(false);timer.start();repaint();
     }
     private int scientistSurfaceLift(int x,int y,int height){
-        if(heroType!=2||height<=0)return 0;
+        if((heroType!=2&&!heroSlimeForm)||height<=0)return 0;
         if(x<0||x>=W||y<0||y>=H)return 20;
         char surface=cells()[y][x];
         return surface=='#'?23:20;
@@ -1434,9 +2123,96 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         g.setColor(Color.WHITE);g.setFont(new Font("Monospaced",Font.BOLD,9));
         g.drawString(Integer.toString(type+1),px+13,top+27);
     }
+    // 0.5.45.0: pit visuals only. Four 100-ms frames, with no change to pit rules.
+    private static final class PitFall {
+        int x,y,frame,kind,direction,tileset,heroType;
+        boolean hero,slime,ogre;
+        final java.awt.image.BufferedImage[] poses=new java.awt.image.BufferedImage[4];
+    }
+    private final java.util.List<PitFall> pitFalls=new java.util.ArrayList<PitFall>();
+    private final javax.swing.Timer pitTimer=new javax.swing.Timer(100,new ActionListener(){
+        public void actionPerformed(ActionEvent e){
+            boolean heroFinished=false;
+            for(java.util.Iterator<PitFall> it=pitFalls.iterator();it.hasNext();){
+                PitFall f=it.next();f.frame++;
+                if(f.frame>=4){if(f.hero)heroFinished=true;it.remove();}
+            }
+            if(pitFalls.isEmpty())pitTimer.stop();
+            if(heroFinished)fallToBeginning();
+            repaint();
+        }
+    });
+    private void beginPitFall(boolean hero,Slime mob,int x,int y){
+        PitFall f=new PitFall();f.hero=hero;f.x=x;f.y=y;
+        f.direction=hero?facing:mob.dir;
+        f.kind=hero?'S':mob.kind;f.slime=hero?heroSlimeForm:mob.gardenSlime;
+        f.heroType=heroType;f.tileset=levels.get(selected).tileset;
+        for(int i=0;i<4;i++){
+            java.awt.image.BufferedImage b=new java.awt.image.BufferedImage(64,64,java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D bg=b.createGraphics();
+            try{
+                int pose=gardenRandom.nextInt(3);
+                if(hero&&!f.slime){
+                    java.awt.image.BufferedImage img=null;
+                    if(heroType==0)img=BUCKET_HERO_IMAGES[f.direction][pose];
+                    else if(heroType==1)img=POLICE_HERO_IMAGES[f.direction][pose];
+                    else if(heroType==2)img=SCIENTIST_HERO_IMAGES[f.direction][pose];
+                    else img=FIGHTER_HERO_IMAGES[f.direction][pose];
+                    if(img!=null)bg.drawImage(img,16,56-img.getHeight(),null);
+                    else drawHero(bg,16,16,heroType);
+                }else{
+                    char c=f.slime?'S':(char)f.kind;
+                    java.awt.image.BufferedImage img=null;
+                    int d=Math.max(0,Math.min(3,f.direction));
+                    if(c=='L'||c=='R')img=SKELETON_IMAGES[(d==1?3:d==3?1:d)][pose];
+                    else if(c=='N')img=ORC_IMAGES[d][pose];
+                    else if(c=='G')img=GOBLIN_IMAGES[d][pose];
+                else if(c=='K')img=RAT_IMAGES[d][pose];
+                    else if(c=='S'||c=='s')img=MOB_IMAGES[f.slime?0:(f.tileset==1?1:f.tileset==2?2:0)][pose];
+                    if(img!=null)bg.drawImage(img,16+(32-img.getWidth())/2,56-img.getHeight(),null);
+                    else drawMob(bg,c,16,24,f.tileset,d,false,false);
+                }
+            }finally{bg.dispose();}
+            f.poses[i]=b;
+        }
+        pitFalls.add(f);pitTimer.start();
+        if(hero){queuedMoves.clear();moving=false;mobPhase=false;moveTimer.stop();movePhase=0;}
+        repaint();
+    }
+    // Ogre retains its own pit handler and delayed respawn rules.
+    private void beginOgrePitFall(){
+        for(PitFall old:pitFalls)if(old.ogre)return;
+        PitFall f=new PitFall();f.ogre=true;f.x=ogreX;f.y=ogreY;
+        for(int i=0;i<4;i++){
+            java.awt.image.BufferedImage b=new java.awt.image.BufferedImage(64,64,java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            Graphics2D bg=b.createGraphics();
+            try{
+                java.awt.image.BufferedImage img=OGRE_IMAGES[ogreFacing][gardenRandom.nextInt(3)];
+                if(img!=null)bg.drawImage(img,16,56-img.getHeight(),null);
+                else drawOgre(bg,16,24);
+            }finally{bg.dispose();}
+            f.poses[i]=b;
+        }
+        pitFalls.add(f);pitTimer.start();repaint();
+    }
+    private void drawPitFalls(Graphics2D g){
+        for(PitFall f:pitFalls){
+            // Fixed pit mouth: move the full sprite DOWN by 10px each frame.
+            // Clipping stays fixed, so its lower quarters disappear below the rim.
+            int sink=f.frame*10;
+            Graphics2D clipped=(Graphics2D)g.create();
+            try{
+                clipped.clipRect(f.x*TILE-16,f.y*TILE-24,64,40);
+                clipped.drawImage(f.poses[f.frame],f.x*TILE-16,f.y*TILE-40+sink,null);
+            }finally{clipped.dispose();}
+        }
+    }
+    private boolean isFallingMob(Slime mob){for(PitFall f:pitFalls)if(!f.hero&&f.x==mob.x&&f.y==mob.y)return true;return false;}
+    private boolean heroInPitAnimation(){for(PitFall f:pitFalls)if(f.hero)return true;return false;}
     // Pit transition only: preserve the hero and all existing world state.
     private void fallToBeginning(){
         queuedMoves.clear();
+        pitFalls.clear();pitTimer.stop();
         moving=false;mobPhase=false;moveTimer.stop();movePhase=0;
         fighterDash=false;landingMove=false;elevatedMove=false;
         crateX=crateY=-1;pushAction=false;pushIntoPit=false;pushIntoFilledPit=false;
@@ -1448,6 +2224,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         syncSuperSlimeTimer();saveProgress();repaint();
     }
     private void resetHero(){
+        heroGardenStun=0;
         queuedMoves.clear();
         moving=false;mobPhase=false;moveTimer.stop();movePhase=0;crateX=-1;crateY=-1;slimes();
         int[] at=findSpawn(levels.get(selected),fromExit?'E':'@');
@@ -1456,6 +2233,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         if(at==null && selected==0 && !fromExit && cells()[3][2]=='.' && !slimeAt(2,3))
             at=new int[]{2,3};
         heroX=at==null?-1:at[0];heroY=at==null?-1:at[1];heroHeight=0;heroDead=false;
+        if(levels.get(selected).id==40)beginGardenOnFortiethLevel();
         syncSuperSlimeTimer();repaint();
     }
     // Entry is read from the destination map. Never assign a door by level number.
@@ -1489,6 +2267,12 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         int oldSelected=selected,oldX=heroX,oldY=heroY;
         selected=target;
         slimes(); // Convert map slime symbols to independent actors.
+        // Ratman always starts fresh on each new entry, even after death or escape.
+        for(Slime rat:slimes())if(rat.kind=='K'){
+            rat.x=rat.spawnX;rat.y=rat.spawnY;rat.dead=false;rat.escaped=false;
+            rat.stun=0;rat.dx=rat.dy=0;rat.ratFleeing=false;
+            rat.ratLeverX=rat.ratLeverY=-1;rat.tx=rat.ty=-1;
+        }
         for(Slime gob:slimes())if(gob.kind=='G'&&gob.escaped){
             for(int yy=0;yy<H;yy++)for(int xx=0;xx<W;xx++)if(levels.get(selected).cells[yy][xx]=='G'){
                 gob.x=xx;gob.y=yy;gob.escaped=false;gob.dead=false;gob.stun=0;gob.dx=gob.dy=0;
@@ -1512,14 +2296,23 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         if(spawnX<0){selected=oldSelected;heroX=oldX;heroY=oldY;return false;}
         // Reset the ritual only after a successful level transition.
         // This also clears a completed ritual when the player leaves level 30.
-        if(oldSelected!=target && (levels.get(oldSelected).id==30 || levels.get(target).id==30))
+        if(oldSelected!=target){
+            resetWizardVisit(oldSelected);
+            resetWizardVisit(target);
             resetRitual();
+        }
+        if(oldSelected!=target){resetOrcsOnExit(oldSelected);clearGardenForms(oldSelected);}
         // Spawned slimes exist only during a visit to level 20.
         if(levels.get(oldSelected).id==20 && oldSelected!=target){
             slimeStates.remove(Integer.valueOf(oldSelected));
         }
         queuedMoves.clear();
         heroX=spawnX;heroY=spawnY;heroHeight=0;fromExit=backward;heroDead=false;
+        if(levels.get(selected).id==40){gardenDefeated=false;gardenAwakened=false;beginGardenOnFortiethLevel();}
+        else if(gardenAwakened&&!gardenDefeated)startGardenAt(heroX,heroY);
+        else if(gardenDefeated){gardenTimer.stop();cleanseTimer.stop();gardenCleansing=false;for(int y=0;y<H;y++)java.util.Arrays.fill(gardenMask[y],false);}
+        applyGardenTransformations();
+
         if(!ogreDebugDisabled&&ogreAwakened&&!ogreDead)scheduleOgre(!backward);
         moving=false;mobPhase=false;moveTimer.stop();movePhase=0;crateX=crateY=-1;
         syncSuperSlimeTimer();saveProgress();repaint();return true;
@@ -1561,7 +2354,29 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         char[][] a=cells();char c=a[y][x];
         if(ogreAt(x,y)||superSlimeAt(x,y))heroDead=true;
         for(Slime mob:slimes())if(!mob.dead&&!mob.escaped&&mob.x==x&&mob.y==y){
-            if(mob.kind=='L'||mob.kind=='R'||mob.kind=='M'||mob.kind=='m'||mob.kind=='G')mob.dead=true;
+            if(mob.kind=='N'){
+                // Fighter cannot kill an orc directly: stun it and try a one-tile push.
+                mob.stun=1;mob.dx=mob.dy=0;
+                int nx=x+moveDX,ny=y+moveDY;
+                boolean canPush=nx>=0&&ny>=0&&nx<W&&ny<H;
+                if(canPush){
+                    char landing=a[ny][nx];
+                    if(landing=='#'||landing=='W'||landing=='B'||landing=='b'||landing=='T'||landing=='t'||
+                       landing=='G'||ogreAt(nx,ny)||superSlimeAt(nx,ny))canPush=false;
+                    for(Slime other:slimes())if(other!=mob&&!other.dead&&!other.escaped&&other.x==nx&&other.y==ny)canPush=false;
+                    if(canPush){
+                        mob.x=nx;mob.y=ny;
+                        if(landing=='O'||landing=='o'||landing=='1'||landing=='X'){
+                            mob.dead=true;
+                            if(landing=='O'||landing=='o')beginPitFall(false,mob,nx,ny);
+                            if(landing=='1'){a[ny][nx]='X';beginEnemySpikeDeath(mob);}
+                        }
+                    }
+                }
+                // The fighter stops immediately before the stunned or pushed orc.
+                dashEndX=x-moveDX;dashEndY=y-moveDY;
+                x=dashEndX;y=dashEndY;c=a[y][x];
+            }else if(mob.kind=='L'||mob.kind=='R'||mob.kind=='M'||mob.kind=='m'||mob.kind=='G'||mob.kind=='K'||mob.kind=='P')mob.dead=true;
             else {heroDead=true;}
         }
         if(c=='B'||c=='b')a[y][x]='.';
@@ -1573,11 +2388,11 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         }
         heroX=x;heroY=y;
         if(c=='O'||c=='o'){
-            fighterDash=false;fallToBeginning();return;
+            fighterDash=false;beginPitFall(true,null,x,y);return;
         }
         if(c=='1'||c=='X'){
             if(c=='1')a[y][x]='X';
-            heroDead=true;
+            fighterDash=false;beginHeroSpikeDeath(x,y);return;
         }
         collectTrash(x,y);
         fighterDash=false;moving=false;movePhase=0;moveTimer.stop();stride^=1;
@@ -1588,7 +2403,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         tickGrates();if(!heroDead)planSlimes();else syncSuperSlimeTimer();repaint();
     }
     private void beginMove(int dx,int dy,int direction,boolean action){
-        if(moving||heroX<0||heroDead)return;
+        if(moving||heroX<0||heroDead||heroInPitAnimation()||heroInSpikeAnimation())return;
         facing=direction;
         int nx=heroX+dx,ny=heroY+dy;
         if(nx<0||nx>=W||ny<0||ny>=H)return;
@@ -1596,8 +2411,8 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         char c=state[ny][nx];
         crateX=-1;crateY=-1;pushAction=false;pushIntoPit=false;pushIntoFilledPit=false;doorMove=false;doorTarget=-1;
         elevatedMove=false;landingMove=false;walkingOnTop=false;
-        if(heroType==3 && action){fighterRush(dx,dy);return;}
-        if(heroType==2){
+        if(heroType==3 && action && !heroSlimeForm){fighterRush(dx,dy);return;}
+        if(heroType==2||heroSlimeForm){
             if(heroHeight>0){
                 if(action){
                     // On a wall or crate, SPACE+direction always means jump down.
@@ -1629,22 +2444,22 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             doorMove=true;doorTarget=target;
             moveDX=dx;moveDY=dy;movePhase=0;startTurn();moving=true;moveTimer.start();return;
         }
-        if(action && heroType==1){
+        if(action && heroType==1 && !heroSlimeForm){
             if(c=='B'||c=='b'){ /* push below */ }
             else if(c=='T'){toggleLever(nx,ny);return;}
             else {showHeroAction();shock(nx,ny);return;}
         }
-        if(action && heroType==0 && c=='T'){toggleLever(nx,ny);return;}
-        if(action && heroType==0 && c!='B' && c!='b'){
+        if(action && heroType==0 && !heroSlimeForm && c=='T'){toggleLever(nx,ny);return;}
+        if(action && heroType==0 && !heroSlimeForm && c!='B' && c!='b'){
             throwTrash(dx,dy);return;
         }
-        if(action && heroType==2 && (c=='1'||c=='x')){
+        if(action && heroType==2 && !heroSlimeForm && (c=='1'||c=='x')){
             state[ny][nx]=(c=='1'?'x':'1');
             showHeroAction();finishActionTurn();return;
         }
         if(c=='B'||c=='b'){
             // The first hero can push only through SPACE + direction.
-            if(!action || (heroType!=0 && heroType!=1))return;
+            if(!action || heroSlimeForm || (heroType!=0 && heroType!=1))return;
             int bx=nx+dx,by=ny+dy;
             if(bx<0||bx>=W||by<0||by>=H)return;
             if((state[by][bx]!='.' && state[by][bx]!='F' && state[by][bx]!='1' && state[by][bx]!='O' && state[by][bx]!='o' && state[by][bx]!='w')||slimeAt(bx,by))return;
@@ -1663,21 +2478,42 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             if(fighterDash){resolveFighterDash();return;}
             if(mobPhase){
                 for(Slime slime:slimes()){
-                    if(slime.dead||slime.escaped||slime.stun>0)continue;
+                    if(slime.dead||slime.escaped||slime.stun>0||slime.webTurns>0)continue;
+                    if(slime.kind=='V'){
+                        if(ritualMoving){
+                            // Only advance the route after an actual one-tile move.
+                            int next=(ritualIndex+1)%RITUAL_OX.length;
+                            int nx=ritualX(next),ny=ritualY(next);
+                            boolean valid=slime.x+slime.dx==nx&&slime.y+slime.dy==ny
+                                &&Math.abs(slime.dx)+Math.abs(slime.dy)==1;
+                            if(valid){
+                                // Another mob may have arrived at the destination during the animation.
+                                for(Slime other:slimes())if(other!=slime&&!other.dead&&!other.escaped
+                                    &&other.x==nx&&other.y==ny){valid=false;break;}
+                            }
+                            if(valid){slime.alternateStep=!slime.alternateStep;slime.x=nx;slime.y=ny;ritualIndex=next;}
+                            slime.dx=slime.dy=0;ritualMoving=false;
+                        }
+                        continue;
+                    }
                     if(slime.dx!=0||slime.dy!=0)slime.alternateStep=!slime.alternateStep;
                     slime.x+=slime.dx;slime.y+=slime.dy;slime.dx=0;slime.dy=0;
-                    if(slime.kind=='G'&&(cells()[slime.y][slime.x]=='@'||cells()[slime.y][slime.x]=='E')){slime.escaped=true;continue;}
+                    // Standard step-on collision: spider occupies the prey tile, then prey dies.
+                    if(slime.kind=='P')for(Slime prey:slimes())if(prey!=slime&&prey.kind!='P'&&!prey.dead&&!prey.escaped&&prey.x==slime.x&&prey.y==slime.y){prey.dead=true;prey.webTurns=0;}
+                    if((slime.kind=='G'||slime.kind=='K')&&(cells()[slime.y][slime.x]=='@'||cells()[slime.y][slime.x]=='E')){slime.escaped=true;continue;}
                     char ground=cells()[slime.y][slime.x];
-                    if(slime.kind!='M'&&slime.kind!='m'&&ground!='W'&&(ground=='O'||ground=='o'||ground=='1')){
+                    if(slime.kind!='M'&&slime.kind!='m'&&ground!='W'&&(ground=='1'||(slime.kind!='P'&&(ground=='O'||ground=='o')))){
                         slime.dead=true;
-                        if(ground=='1')cells()[slime.y][slime.x]='X';
+                        if(ground=='O'||ground=='o')beginPitFall(false,slime,slime.x,slime.y);
+                        if(ground=='1'){cells()[slime.y][slime.x]='X';beginEnemySpikeDeath(slime);}
                     }
                 }
-                for(Slime slime:slimes())if(!slime.dead&&!slime.escaped)collectTrash(slime.x,slime.y);
+                for(Slime slime:slimes())if(!slime.dead&&!slime.escaped&&slime.kind!='V')collectTrash(slime.x,slime.y);
                 boolean caught=false;
                 for(Slime slime:slimes())if(!slime.dead&&!slime.escaped&&slime.stun==0&&(heroHeight==0||slime.kind=='M'||slime.kind=='m')&&slime.x==heroX&&slime.y==heroY){caught=true;break;}
-                if(caught)heroDead=true;
+                if(caught&&!heroSlimeForm)heroDead=true;
                 if(heroDead)syncSuperSlimeTimer();
+                applyGardenTransformations();
                 mobPhase=false;movePhase=0;moving=false;moveTimer.stop();
                 repaint();afterAnimation();return;
             }
@@ -1709,6 +2545,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             }
             if(landingMove){
                 landingMove=false;landAt(heroX,heroY);
+                if(heroInPitAnimation()||heroInSpikeAnimation())return;
                 if(!heroDead){collectTrash(heroX,heroY);}
                 movePhase=0;moving=false;moveTimer.stop();stride^=1;
                 tickGrates();if(!heroDead)planSlimes();repaint();return;
@@ -1717,13 +2554,12 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
             if((ogreAt(heroX,heroY)&&heroHeight==0)||superSlimeAt(heroX,heroY))heroDead=true;
             char ground=cells()[heroY][heroX];
             if(ground=='O'||ground=='o'){
-                fallToBeginning();return;
+                beginPitFall(true,null,heroX,heroY);return;
             }
             if(ground=='1'){
-                cells()[heroY][heroX]='X';heroDead=true;
-                movePhase=0;moving=false;mobPhase=false;moveTimer.stop();repaint();return;
+                cells()[heroY][heroX]='X';beginHeroSpikeDeath(heroX,heroY);return;
             }
-            movePhase=0;moving=false;moveTimer.stop();stride^=1;tickGrates();if(!heroDead)planSlimes();else syncSuperSlimeTimer();
+            movePhase=0;moving=false;moveTimer.stop();stride^=1;applyGardenTransformations();tickGrates();if(!heroDead)planSlimes();else syncSuperSlimeTimer();
         }
         repaint();
     }
@@ -1735,7 +2571,7 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         startTurn();tickGrates();if(!heroDead)planSlimes();repaint();
     }
     private void waitTurn(){
-        if(!moving&&heroX>=0&&!heroDead)finishActionTurn();
+        if(!moving&&heroX>=0&&!heroDead&&!heroInPitAnimation()&&!heroInSpikeAnimation())finishActionTurn();
     }
     private void nextHero(){
         queuedMoves.clear();
@@ -1749,13 +2585,14 @@ public final class Viewer extends JPanel implements KeyListener, MouseListener, 
         else if(k==KeyEvent.VK_S)k=KeyEvent.VK_DOWN;
         else if(k==KeyEvent.VK_D)k=KeyEvent.VK_RIGHT;
         if(deathFadeActive){exitAfterDeath();return;}
-        if(ritualFinalStage>0)return;
+        if(ritualFinalStage>0||heroInSpikeAnimation())return;
         if(pauseScreen!=0){pauseKey(k);return;}
         if(k==KeyEvent.VK_ESCAPE){openPause();return;}
         if(heroDead){
             // Ignore key-release and key-repeat artefacts; one new key press advances.
             spaceHeld=false;spaceUsed=false;return;
         }
+        if(heroWebTurns>0&&k!=KeyEvent.VK_SPACE){if(!moving&&(k==KeyEvent.VK_UP||k==KeyEvent.VK_DOWN||k==KeyEvent.VK_LEFT||k==KeyEvent.VK_RIGHT)){finishActionTurn();}return;}
         if(k==KeyEvent.VK_SPACE){
             if(!spaceHeld){spaceHeld=true;spaceUsed=false;}
             return;
