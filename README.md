@@ -44,7 +44,7 @@ The repository includes the Java modules, game assets, sprites, level data and s
 
 **Modules:** `NecronomicOS_Menu.jar`, `Catacombs.jar`, `Catacombs-Level-Editor.jar`.
 
-**Latest published release:** 0.5.46.8 Beta / Demo (Windows, Linux, macOS). Download the game and installers from [Releases](https://github.com/ma-beast/NOS-RPG/releases).
+**Latest published release:** 0.5.51.4 Beta / Demo · Level Editor 1.4 (Windows, Linux, macOS). Download the game and installers from [Releases](https://github.com/ma-beast/NOS-RPG/releases).
 
 **Tested installers:**
 
@@ -104,7 +104,7 @@ Requires Java 7 or newer. The Windows installer includes OpenJDK 7. The macOS an
 
 **Модули:** `NecronomicOS_Menu.jar`, `Catacombs.jar`, `Catacombs-Level-Editor.jar`.
 
-**Последний опубликованный релиз:** 0.5.46.8 Beta / Demo (Windows, Linux, macOS). Скачать игру и установщики можно в разделе [Releases](https://github.com/ma-beast/NOS-RPG/releases).
+**Последний опубликованный релиз:** 0.5.51.4 Beta / Demo · Редактор уровней 1.4 (Windows, Linux, macOS). Скачать игру и установщики можно в разделе [Releases](https://github.com/ma-beast/NOS-RPG/releases).
 
 **Проверенные инсталляторы:**
 
